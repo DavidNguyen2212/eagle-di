@@ -14,6 +14,7 @@ from app.core.eagle_di import (
     Injectable,
     get_service,
     async_shutdown_all,
+    process_async_inits,
     test_container,
 )
 
@@ -40,7 +41,7 @@ class TestAsyncOnInit:
 
     @pytest.mark.asyncio
     async def test_async_on_init_called(self):
-        """async on_init should be called after instantiation"""
+        """async on_init should be called after process_async_inits()"""
         init_called = []
 
         @Injectable
@@ -50,29 +51,35 @@ class TestAsyncOnInit:
                 await asyncio.sleep(0.01)  # Simulate async work
 
         service = get_service(AsyncService)
-
-        # Give time for async on_init to complete
-        await asyncio.sleep(0.1)
-
-        assert len(init_called) == 1, "on_init should be called once"
+        
+        # Async on_init is queued, not called yet
+        assert len(init_called) == 0, "on_init should be queued, not called immediately"
+        
+        # Process queued async inits
+        await process_async_inits()
+        
+        assert len(init_called) == 1, "on_init should be called after process_async_inits"
 
     @pytest.mark.asyncio
     async def test_async_on_init_with_state(self):
-        """async on_init can set up service state"""
+        """async on_init can set up service state after process_async_inits()"""
         @Injectable
         class DatabaseService:
             def __init__(self):
                 self.connected = False
-
+            
             async def on_init(self):
                 await asyncio.sleep(0.01)  # Simulate connection
                 self.connected = True
 
         service = get_service(DatabaseService)
-
-        # Wait for async init
-        await asyncio.sleep(0.1)
-
+        
+        # Not connected yet (on_init queued)
+        assert service.connected is False
+        
+        # Process async inits
+        await process_async_inits()
+        
         assert service.connected is True
 
     @pytest.mark.asyncio
@@ -86,7 +93,7 @@ class TestAsyncOnInit:
                 init_called.append(True)
 
         service = get_service(SyncService)
-
+        
         assert len(init_called) == 1
 
 
@@ -150,34 +157,34 @@ class TestAsyncLifecycleOrder:
                 events.append("init_start")
                 await asyncio.sleep(0.01)
                 events.append("init_end")
-
+            
             async def on_destroy(self):
                 events.append("destroy")
 
         get_service(OrderedService)
-        await asyncio.sleep(0.1)  # Wait for init
+        await process_async_inits()  # Process queued on_init
         await async_shutdown_all()
 
         assert events == ["init_start", "init_end", "destroy"]
 
     @pytest.mark.asyncio
     async def test_service_usable_during_init(self):
-        """Service should be available even while on_init is running"""
+        """Service should be available even while on_init is queued"""
         @Injectable
         class SlowInitService:
             def __init__(self):
                 self.value = "ready"
-
+            
             async def on_init(self):
-                await asyncio.sleep(0.05)  # Short init to avoid pending task warning
+                await asyncio.sleep(0.05)
 
         service = get_service(SlowInitService)
-
-        # Service is immediately available
+        
+        # Service is immediately available (on_init is queued)
         assert service.value == "ready"
-
-        # Wait for init to complete to avoid pending task warning
-        await asyncio.sleep(0.1)
+        
+        # Process async inits to avoid pending coroutine warning
+        await process_async_inits()
 
 
 class TestAsyncErrorHandling:
@@ -190,13 +197,16 @@ class TestAsyncErrorHandling:
         class FailingInitService:
             def __init__(self):
                 self.value = "ok"
-
+            
             async def on_init(self):
                 raise ValueError("Init failed!")
 
         # Service should still be created
         service = get_service(FailingInitService)
         assert service.value == "ok"
+        
+        # Error is logged but doesn't raise
+        await process_async_inits()
 
     @pytest.mark.asyncio
     async def test_on_destroy_error_doesnt_stop_others(self):
