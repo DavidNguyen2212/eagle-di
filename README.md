@@ -13,7 +13,32 @@
 Type hint-based DI for FastAPI. Auto-inject services without explicit `Depends()`.
 
 **A pure Python, zero-dependency DI mini utility built specifically for FastAPI applications.**
+---
 
+## Rationale
+
+The main reasons behind this DI framework design are:
+
+- **Zero external dependencies** - Single file, copy-paste ready, no `pip install` needed
+- **Type hint-based injection** - Let Python's type system do the wiring
+- **FastAPI-native** - Seamless integration with FastAPI's `Depends()` system
+- **Singleton by default** - Optimized for web applications where services are stateless
+
+### ✅ When to use this DI
+
+- You want a **simple, drop-in DI solution** for FastAPI
+- You prefer **convention over configuration** (auto-inject by type)
+- You need DI in **background workers/Celery tasks** via `get_service()`
+- You want **< 1000 LOC** to understand, debug, and maintain
+- You care about **startup simplicity** more than micro-optimizations
+
+### ❌ When NOT to use this DI
+
+- You need **transient/request scopes** (this only supports singleton)
+- You require **Cython-level performance** (use `dependency-injector`)
+- You want **advanced features** like conditional providers, async factories
+- You need **multi-container isolation** in the same process
+- Your project has **500+ injectable classes** (consider a compiled solution)
 ---
 
 ## 📦 Installation
@@ -83,31 +108,6 @@ python -c "from app.core.eagle_di import Injectable; print('✅ DI Framework rea
 ```
 
 ---
-
-## Rationale
-
-The main reasons behind this DI framework design are:
-
-- **Zero external dependencies** - Single file, copy-paste ready, no `pip install` needed
-- **Type hint-based injection** - Let Python's type system do the wiring
-- **FastAPI-native** - Seamless integration with FastAPI's `Depends()` system
-- **Singleton by default** - Optimized for web applications where services are stateless
-
-### ✅ When to use this DI
-
-- You want a **simple, drop-in DI solution** for FastAPI
-- You prefer **convention over configuration** (auto-inject by type)
-- You need DI in **background workers/Celery tasks** via `get_service()`
-- You want **< 1000 LOC** to understand, debug, and maintain
-- You care about **startup simplicity** more than micro-optimizations
-
-### ❌ When NOT to use this DI
-
-- You need **transient/request scopes** (this only supports singleton)
-- You require **Cython-level performance** (use `dependency-injector`)
-- You want **advanced features** like conditional providers, async factories
-- You need **multi-container isolation** in the same process
-- Your project has **500+ injectable classes** (consider a compiled solution)
 
 ## Quick Start
 
