@@ -1,8 +1,10 @@
 # 🔧 Class-level Dependency Injection
 
 <p align="center">
-  <img src="docs/di_logo.png" alt="DI utility Logo" width="400">
+  <img src="docs/di_logo.png" alt="DI Framework Logo" width="200">
 </p>
+
+<h2 align="center"><em>EAGLE DI</em></h2>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.9+-3776ab.svg?logo=python&logoColor=white" alt="Python 3.9+">
@@ -13,11 +15,36 @@
 Type hint-based DI for FastAPI. Auto-inject services without explicit `Depends()`.
 
 **A pure Python, zero-dependency DI mini utility built specifically for FastAPI applications.**
+
 ---
+
+## ⚠️ v2.0.0 Breaking Changes
+
+> **🚀 v2.0.0** - Performance improved **10-30x** compared to v1.x!
+> Registration: 52ms → 1.49ms | Resolution gap vs Cython: 18x → 2x
+
+> **Async `on_init()` hooks now require explicit `await process_async_inits()`**
+
+**Before (v1.x):** Async `on_init()` was fire-and-forget (scheduled as task)
+
+**After (v2.0):** Async `on_init()` is queued and must be awaited explicitly
+
+```python
+# ❌ OLD - v1.x (async on_init runs automatically)
+_ = get_service(CacheService)
+
+# ✅ NEW - v2.0 (must await queued async hooks)
+from app.core.injector import process_async_inits
+
+_ = get_service(CacheService)
+await process_async_inits()  # Required for async on_init()
+```
+
+**Why?** Proper async lifecycle management - ensures all async initialization completes before app starts serving requests.
 
 ## Rationale
 
-The main reasons behind this DI utility design are:
+The main reasons behind this DI framework design are:
 
 - **Zero external dependencies** - Single file, copy-paste ready, no `pip install` needed
 - **Type hint-based injection** - Let Python's type system do the wiring
@@ -39,80 +66,11 @@ The main reasons behind this DI utility design are:
 - You want **advanced features** like conditional providers, async factories
 - You need **multi-container isolation** in the same process
 - Your project has **500+ injectable classes** (consider a compiled solution)
----
-
-## 📦 Installation
-
-### Prerequisites
-
-- Python 3.9 or higher
-- `uv` package manager (recommended)
-
-### Step 1: Install uv
-
-```bash
-# macOS/Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Windows
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-# Or via pip
-pip install uv
-```
-
-### Step 2: Create Virtual Environment
-
-```bash
-# Create a new virtual environment with uv
-uv venv
-
-# Activate the virtual environment
-# On macOS/Linux:
-source .venv/bin/activate
-
-# On Windows:
-.venv\Scripts\activate
-```
-
-### Step 3: Install Dependencies
-
-```bash
-# Install from requirements.txt
-uv pip install -r requirements.txt
-
-# Or install FastAPI directly
-uv pip install fastapi uvicorn[standard]
-```
-
-### Step 4: Copy DI utility
-
-Since this is a **zero-dependency, single-file utility**, simply copy `eagle_di.py` to your project:
-
-```bash
-# Create core directory
-mkdir -p app/core
-
-# Copy the DI utility
-cp eagle_di.py app/core/
-
-# Or download directly
-curl -o app/core/eagle_di.py https://raw.githubusercontent.com/your-repo/eagle_di.py
-```
-
-### Verify Installation
-
-```bash
-# Test that everything works
-python -c "from app.core.eagle_di import Injectable; print('✅ DI utility ready!')"
-```
-
----
 
 ## Quick Start
 
 ```python
-from app.core.eagle_di import Injectable, AutoInject
+from app.core.injector import Injectable, AutoInject
 
 # 1. Mark class as injectable
 @Injectable
@@ -139,12 +97,13 @@ async def get_order(id: str, order_service: OrderService):  # ← Auto-injected!
 
 | Scenario | Time | Notes |
 |----------|------|-------|
-| Small Project (20 classes) | 16ms | Registration |
-| Medium Project (50 classes) | 60ms | Registration |
-| Large Project (100 classes) | 94ms | Registration |
-| Deep Dependencies (10 levels) | 1.4ms | Resolution |
-| Singleton Cache Hit | 0.001ms | Blazing fast |
-| Concurrent (10 threads) | 8ms | Thread-safe ✅ |
+| Small Project (20 classes) | 1.09ms | Registration |
+| Medium Project (50 classes) | 1.25ms | Registration |
+| Large Project (100 classes) | 3.22ms | Registration |
+| Deep Dependencies (10 levels) | 0.05ms | Resolution |
+| Singleton Cache Hit | 0.0004ms | Blazing fast |
+| Concurrent (10 threads) | 2.08ms | Thread-safe ✅ |
+| Cold→Warm Speedup | 94x | Cached singleton |
 
 ---
 
@@ -160,7 +119,7 @@ async def get_order(id: str, order_service: OrderService):  # ← Auto-injected!
 | Testing utilities | ✅ | ✅ |
 | Zero dependencies | ✅ Pure Python | ❌ Cython |
 | Copy-paste ready | ✅ 1 file | ❌ pip install |
-| LOC | ~780 | ~15,000+ |
+| LOC | ~1200 | ~15,000+ |
 
 > **Summary:** 80% of features with 5% of complexity. Perfect for small-medium projects!
 
@@ -168,9 +127,9 @@ async def get_order(id: str, order_service: OrderService):  # ← Auto-injected!
 
 | Metric | This DI | dependency-injector | Winner |
 |--------|---------|---------------------|--------|
-| Registration (50 classes) | 52ms | 1ms | DI Library (46x) |
-| Resolution (1000 cached) | 9ms | 0.5ms | DI Library (18x) |
-| Deep chain (5 levels) | 0.24ms | 0.03ms | DI Library (8x) |
+| Registration (50 classes) | 1.49ms | 1.16ms | DI Library (1.3x) |
+| Resolution (1000 cached) | 0.50ms | 0.24ms | DI Library (2.1x) |
+| Deep chain (5 levels) | 0.022ms | 0.011ms | DI Library (2.0x) |
 
 > **Why?** `dependency-injector` uses **Cython** (compiled to C).
 > 
@@ -205,6 +164,7 @@ async def get_order(id: str, order_service: OrderService):  # ← Auto-injected!
 |----------|---------|
 | `on_init()` | Method on service, called after instantiation |
 | `on_destroy()` | Method on service, called during shutdown |
+| `process_async_inits()` | **NEW** Await all queued async on_init() hooks |
 | `async_shutdown_all()` | Call all `on_destroy()` hooks |
 
 ---
@@ -243,12 +203,15 @@ class CacheService:
 Hook into FastAPI lifespan:
 
 ```python
-from app.core.eagle_di import async_shutdown_all, get_service
+from app.core.injector import async_shutdown_all, get_service, process_async_inits
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Eagerly init services that need on_init
+    # Startup: Eagerly init services (queues async on_init)
     _ = get_service(CacheService)
+    
+    # ⚠️ v2.0: Must await async on_init() hooks
+    await process_async_inits()
     
     yield
     
@@ -263,7 +226,7 @@ async def lifespan(app: FastAPI):
 Use `get_service()` outside of FastAPI request context:
 
 ```python
-from app.core.eagle_di import get_service
+from app.core.injector import get_service
 
 # Background task
 async def process_queue():
@@ -320,7 +283,7 @@ class ServiceA:
 ### `override()` - Mock a Provider
 
 ```python
-from app.core.eagle_di import override
+from app.core.injector import override
 from unittest.mock import Mock
 
 def test_user_endpoint():
@@ -337,7 +300,7 @@ def test_user_endpoint():
 ### `test_container()` - Complete Isolation
 
 ```python
-from app.core.eagle_di import test_container, Injectable
+from app.core.injector import test_container, Injectable
 
 def test_isolated():
     with test_container():
@@ -463,18 +426,18 @@ def get_user(id: int, service: UserService):
 
 ## Test Suite
 
-Run all DI tests to verify the utility works correctly:
+Run all DI tests to verify the framework works correctly:
 
 ```bash
 # Run all DI tests
-pytest tests/ -v
+pytest tests/unit/DI/ -v
 
 # Run specific test files
-pytest tests/test_injection.py -v       # Core functionality (13 tests)
-pytest tests/test_performance.py -v -s  # Benchmarks (10 tests)
-pytest tests/test_fastapi_integration.py -v  # FastAPI params (15 tests)
-pytest tests/test_async_lifecycle.py -v  # Async lifecycle (9 tests)
-pytest tests/test_benchmark_compare.py -v  # vs dependency-injector (5 tests)
+pytest tests/unit/DI/test_injection.py -v       # Core functionality (13 tests)
+pytest tests/unit/DI/test_performance.py -v -s  # Benchmarks (10 tests)
+pytest tests/unit/DI/test_fastapi_integration.py -v  # FastAPI params (15 tests)
+pytest tests/unit/DI/test_async_lifecycle.py -v  # Async lifecycle (9 tests)
+pytest tests/unit/DI/test_benchmark_compare.py -v  # vs dependency-injector (5 tests)
 ```
 
 | Test File | Tests | Description |
@@ -485,3 +448,4 @@ pytest tests/test_benchmark_compare.py -v  # vs dependency-injector (5 tests)
 | `test_async_lifecycle.py` | 9 | Async on_init/on_destroy |
 | `test_benchmark_compare.py` | 5 | Comparison with dependency-injector |
 | **Total** | **52** | ✅ All passing |
+
