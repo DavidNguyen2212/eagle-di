@@ -295,6 +295,6 @@ class TestFeatureComparison:
         print(f"{'Testing utilities':<30} {'✅ override/container':<15} {'✅ Yes':<15}")
         print(f"{'Zero dependencies':<30} {'✅ Yes':<15} {'❌ Cython':<15}")
         print(f"{'Copy-paste ready':<30} {'✅ 1 file':<15} {'❌ pip install':<15}")
-        print(f"{'LOC':<30} {'~780':<15} {'~15000+':<15}")
+        print(f"{'LOC':<30} {'~1200':<15} {'~15000+':<15}")
         print(f"{'='*60}")
         print(f"\n   📌 Custom DI: 80% features, 5% complexity!")
