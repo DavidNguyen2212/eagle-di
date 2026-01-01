@@ -472,9 +472,9 @@ pytest tests/ -v
 # Run specific test files
 pytest tests/test_injection.py -v       # Core functionality (13 tests)
 pytest tests/test_performance.py -v -s  # Benchmarks (10 tests)
-pytest tests/test_fastapi_integration.py -v  # FastAPI params (15 tests)
-pytest tests/test_async_lifecycle.py -v  # Async lifecycle (9 tests)
-pytest tests/test_benchmark_compare.py -v  # vs dependency-injector (5 tests)
+pytest tests/test_fastapi_integration.py -v -s  # FastAPI params (15 tests)
+pytest tests/test_async_lifecycle.py -v -s # Async lifecycle (9 tests)
+pytest tests/test_benchmark_compare.py -v -s  # vs dependency-injector (5 tests)
 ```
 
 | Test File | Tests | Description |
