@@ -1,7 +1,7 @@
 # 🔧 Class-level Dependency Injection
 
 <p align="center">
-  <img src="docs/di_logo.png" alt="DI Framework Logo" width="400">
+  <img src="docs/di_logo.png" alt="DI utility Logo" width="400">
 </p>
 
 <p align="center">
@@ -17,7 +17,7 @@ Type hint-based DI for FastAPI. Auto-inject services without explicit `Depends()
 
 ## Rationale
 
-The main reasons behind this DI framework design are:
+The main reasons behind this DI utility design are:
 
 - **Zero external dependencies** - Single file, copy-paste ready, no `pip install` needed
 - **Type hint-based injection** - Let Python's type system do the wiring
@@ -85,15 +85,15 @@ uv pip install -r requirements.txt
 uv pip install fastapi uvicorn[standard]
 ```
 
-### Step 4: Copy DI Framework
+### Step 4: Copy DI utility
 
-Since this is a **zero-dependency, single-file framework**, simply copy `eagle_di.py` to your project:
+Since this is a **zero-dependency, single-file utility**, simply copy `eagle_di.py` to your project:
 
 ```bash
 # Create core directory
 mkdir -p app/core
 
-# Copy the DI framework
+# Copy the DI utility
 cp eagle_di.py app/core/
 
 # Or download directly
@@ -104,7 +104,7 @@ curl -o app/core/eagle_di.py https://raw.githubusercontent.com/your-repo/eagle_d
 
 ```bash
 # Test that everything works
-python -c "from app.core.eagle_di import Injectable; print('✅ DI Framework ready!')"
+python -c "from app.core.eagle_di import Injectable; print('✅ DI utility ready!')"
 ```
 
 ---
@@ -463,7 +463,7 @@ def get_user(id: int, service: UserService):
 
 ## Test Suite
 
-Run all DI tests to verify the framework works correctly:
+Run all DI tests to verify the utility works correctly:
 
 ```bash
 # Run all DI tests
