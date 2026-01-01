@@ -1,5 +1,5 @@
 """
-FastAPI Integration Tests for DI Framework
+FastAPI Integration Tests for DI Utility
 ==========================================
 
 Tests to verify that DI works seamlessly with FastAPI:

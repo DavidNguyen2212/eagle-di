@@ -1,5 +1,5 @@
 """
-FastAPI Dependency Injection Framework
+FastAPI Dependency Injection Utility
 ======================================
 
 A lightweight, type-hint based dependency injection system for FastAPI,

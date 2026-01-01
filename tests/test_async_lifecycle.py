@@ -1,5 +1,5 @@
 """
-Async Lifecycle Tests for DI Framework
+Async Lifecycle Tests for DI Utility
 =======================================
 
 Tests for async on_init and on_destroy lifecycle hooks.

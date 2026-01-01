@@ -1,5 +1,5 @@
 """
-Performance Tests for DI Framework
+Performance Tests for DI Utility
 ===================================
 
 Benchmarks to measure DI scalability and speed.

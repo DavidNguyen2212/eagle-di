@@ -1,5 +1,5 @@
 """
-Unit Tests for FastAPI Dependency Injection Framework
+Unit Tests for FastAPI Dependency Injection Utility
 =====================================================
 
 Run with: pytest tests/test_injector.py -v
