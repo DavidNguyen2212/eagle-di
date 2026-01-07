@@ -1,7 +1,7 @@
 # 🔧 Class-level Dependency Injection
 
 <p align="center">
-  <img src="docs/di_logo.png" alt="DI Framework Logo" width="350">
+  <img src="docs/di_logo.png" alt="DI Framework Logo" width="400">
 </p>
 
 <h2 align="center"><em>EAGLE DI</em></h2>
