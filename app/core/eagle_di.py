@@ -350,10 +350,10 @@ def _resolve_service_iterative(cls: Type) -> Any:
             # ✅ Early marking: check and add in one step
             if isinstance(ann, ForwardRef):
                 resolved = ann.resolve()
-                if resolved not in seen and resolved in _registry:
+                if resolved not in seen and resolved in _registry and resolved not in _instances:
                     seen.add(resolved)  # ✅ Mark before appending
                     to_resolve.append(resolved)
-            elif ann in _registry and ann not in seen:
+            elif ann in _registry and ann not in seen and ann not in _instances:
                 seen.add(ann)  # ✅ Mark before appending
                 to_resolve.append(ann)
 
