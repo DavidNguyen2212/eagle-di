@@ -863,15 +863,15 @@ def get_service(cls: Type[T]) -> T:
     Services with ``Depends()`` on request-scoped resources (e.g., DB sessions)
     cannot be created outside request context. Pass the session explicitly.
     """
-    if cls not in _registry:
+    if (instance := _instances.get(cls)) is not None:
+        return instance
+
+    provider = _registry.get(cls)
+    if provider is None:
         raise ValueError(f"{cls.__name__} is not @Injectable")
 
-    if cls in _instances:
-        return _instances[cls]
-
     try:
-        instance = _resolve_service_iterative(cls)
-        return instance
+        return _resolve_service_iterative(cls)
     except Exception as e:
         raise RuntimeError(
             f"Cannot create {cls.__name__} outside FastAPI context. "
