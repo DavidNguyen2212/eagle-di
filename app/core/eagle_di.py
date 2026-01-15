@@ -632,7 +632,33 @@ def Injectable(cls: Type[T]) -> Type[T]:
             dep_count += 1
 
         elif param.default is not inspect.Parameter.empty:
-            default, dep_type = param.default, "📌 default"
+            # ✅ FIX: Wrap default value in hidden Depends() to prevent Swagger exposure
+            # 
+            # FastAPI recursively scans ALL nested Depends() chains and exposes
+            # any parameter without Depends() as a request parameter in Swagger.
+            #
+            # By wrapping the default value in Depends(), we tell FastAPI:
+            # "This param is already handled - don't expose it to the user"
+            #
+            # Example: precision: int = 5 → precision: int = Depends(lambda: 5)
+            # Result: precision is hidden from Swagger but still works internally
+            
+            default_value = param.default
+            
+            def make_default_provider(val):
+                """Create a provider that returns the default value."""
+                def default_provider():
+                    return val
+                # Set signature to hide from FastAPI's param scanning
+                default_provider.__signature__ = inspect.Signature(
+                    return_annotation=annotation if annotation != inspect.Parameter.empty else type(val)
+                )
+                default_provider.__name__ = f"default_{name}"
+                return default_provider
+            
+            default = Depends(make_default_provider(default_value))
+            dep_type = "� hidden default"
+
 
         type_name = getattr(annotation, "__name__", str(annotation))
         _lazy_log(lambda n=name, tn=type_name, dt=dep_type: f"   ├─ {n}: {tn} {dt}")
