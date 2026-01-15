@@ -1,4 +1,4 @@
-# 🔧 Class-level Dependency Injection
+# Eagle DI - Lightweight Dependency Injection for FastAPI
 
 <p align="center">
   <img src="docs/di_logo.png" alt="DI Framework Logo" width="400">
@@ -9,7 +9,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.9+-3776ab.svg?logo=python&logoColor=white" alt="Python 3.9+">
   <img src="https://img.shields.io/badge/FastAPI-0.95+-009688.svg?logo=fastapi&logoColor=white" alt="FastAPI 0.95+">
-  <img src="https://img.shields.io/badge/Tests-59%20passing-green.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-228%20passing-green.svg" alt="Tests">
 </p>
 
 Type hint-based DI for FastAPI. Auto-inject services without explicit `Depends()`.
@@ -18,29 +18,44 @@ Type hint-based DI for FastAPI. Auto-inject services without explicit `Depends()
 
 ---
 
-## ⚠️ v2.0.0 Breaking Changes
+## 🚨 v4.0.0 Breaking Changes
 
-> **🚀 v2.0.0** - Performance improved **10-30x** compared to v1.x!
-> Registration: 52ms → 1.49ms | Resolution gap vs Cython: 18x → 2x
+> **🚀 v4.0.0** - Introducing `InjectableRouter` for automatic dependency injection!
 
-> **Async `on_init()` hooks now require explicit `await process_async_inits()`**
+### What's New
 
-**Before (v1.x):** Async `on_init()` was fire-and-forget (scheduled as task)
-
-**After (v2.0):** Async `on_init()` is queued and must be awaited explicitly
+`InjectableRouter` is a new FastAPI router that automatically handles dependency injection for all routes **without needing `@AutoInject` decorator**!
 
 ```python
-# ❌ OLD - v1.x (async on_init runs automatically)
-_ = get_service(CacheService)
+# ❌ OLD WAY (v3.x) - Required @AutoInject on every route
+from fastapi import APIRouter
+router = APIRouter()
 
-# ✅ NEW - v2.0 (must await queued async hooks)
-from app.core.injector import process_async_inits
+@router.get("/users/{id}")
+@AutoInject
+async def get_user(id: int, service: UserService):
+    return await service.get_user(id)
 
-_ = get_service(CacheService)
-await process_async_inits()  # Required for async on_init()
+# ✅ NEW WAY (v4.0) - No decorator needed!
+from app.core.eagle_di import InjectableRouter
+router = InjectableRouter()
+
+@router.get("/users/{id}")  # @AutoInject not needed!
+async def get_user(id: int, service: UserService):
+    return await service.get_user(id)
 ```
 
-**Why?** Proper async lifecycle management - ensures all async initialization completes before app starts serving requests.
+### Backward Compatibility
+
+- ✅ `@AutoInject` with `@app` routes **still works** (for simple CRUD)
+- ✅ All existing v3.x code continues to work
+- ✅ Migration is **optional** but recommended
+
+### Migration Guide
+
+1. Replace `APIRouter()` → `InjectableRouter()`
+2. Remove `@AutoInject` from routes (InjectableRouter handles it automatically)
+3. That's it! 🎉
 
 ## Rationale
 
@@ -67,30 +82,106 @@ The main reasons behind this DI framework design are:
 - You need **multi-container isolation** in the same process
 - Your project has **500+ injectable classes** (consider a compiled solution)
 
-## Quick Start
+## 🚀 Quick Start
+
+### Method 1️⃣: InjectableRouter (Recommended for Larger Projects)
+
+Perfect for organized projects with multiple routes. **No `@AutoInject` decorator needed!**
 
 ```python
-from app.core.injector import Injectable, AutoInject
+from fastapi import FastAPI
+from app.core.eagle_di import Injectable, InjectableRouter, process_async_inits
 
-# 1. Mark class as injectable
+# 1. Define your services
+@Injectable
+class UserRepository:
+    async def async_init(self):
+        """Called automatically during startup"""
+        print("🔌 Connecting to database...")
+    
+    async def get_user(self, user_id: int):
+        return {"id": user_id, "name": f"User{user_id}"}
+
 @Injectable
 class UserService:
-    def get_user(self, id: str):
-        return {"id": id}
+    def __init__(self, repo: UserRepository):
+        self.repo = repo  # Auto-injected!
+    
+    async def get_user(self, user_id: int):
+        return await self.repo.get_user(user_id)
 
-# 2. Auto-inject into other services
-@Injectable
-class OrderService:
-    def __init__(self, user_service: UserService):  # ← Auto-injected!
-        self.user_service = user_service
+# 2. Create InjectableRouter (NOT APIRouter!)
+from app.core.eagle_di import InjectableRouter
+router = InjectableRouter(prefix="/api")
 
-# 3. Use in FastAPI endpoints
-@router.get("/orders/{id}")
-@AutoInject
-async def get_order(id: str, order_service: OrderService):  # ← Auto-injected!
-    return order_service.get(id)
+# 3. Define routes - dependency injection happens automatically!
+@router.get("/users/{user_id}")
+async def get_user(user_id: int, service: UserService):
+    # UserService is auto-injected, no @AutoInject needed!
+    return await service.get_user(user_id)
+
+@router.post("/users")
+async def create_user(data: dict, service: UserService):
+    # Works with all FastAPI features: body, query params, headers, etc.
+    return {"created": True}
+
+# 4. Setup FastAPI app
+app = FastAPI()
+app.include_router(router)
+
+@app.on_event("startup")
+async def startup():
+    await process_async_inits()  # Initialize all services
 ```
 
+### Method 2️⃣: @AutoInject with @app Routes (For Simple CRUD)
+
+Perfect for quick prototypes or simple services. Use `@AutoInject` decorator on routes.
+
+```python
+from fastapi import FastAPI
+from app.core.eagle_di import Injectable, AutoInject, process_async_inits
+
+# 1. Define your services (same as above)
+@Injectable
+class UserService:
+    def get_user(self, user_id: int):
+        return {"id": user_id, "name": f"User{user_id}"}
+
+# 2. Create regular FastAPI app
+app = FastAPI()
+
+# 3. Use @AutoInject decorator on routes
+@app.get("/users/{user_id}")
+@AutoInject  # Add this decorator for DI
+async def get_user(user_id: int, service: UserService):
+    return service.get_user(user_id)
+
+@app.post("/users")
+@AutoInject  # Required for each route
+async def create_user(data: dict, service: UserService):
+    return {"created": True}
+
+@app.on_event("startup")
+async def startup():
+    await process_async_inits()
+```
+
+**Important:** With `@app` routes, `@AutoInject` must be placed **BELOW** the route decorator:
+
+```python
+# ✅ CORRECT
+@app.get("/users/{id}")
+@AutoInject
+def get_user(id: int, service: UserService):
+    pass
+
+# ❌ WRONG - Won't work!
+@AutoInject
+@app.get("/users/{id}")
+def get_user(id: int, service: UserService):
+    pass
+```
 ---
 
 ## Performance Benchmarks
@@ -143,12 +234,13 @@ async def get_order(id: str, order_service: OrderService):  # ← Auto-injected!
 | Function/Decorator | Purpose |
 |-------------------|---------|
 | `@Injectable` | Register a class for DI (singleton by default) |
-| `@AutoInject` | Auto-inject deps into FastAPI endpoint |
-| `@Controller(prefix, tags)` | Controller decorator (combines Injectable + routing) |
+| `InjectableRouter` | Register a router for DI (singleton by default) |
+| `@AutoInject` | Auto-inject deps into FastAPI endpoint (Deprecated, now just use for @app with simple CRUD) |
+| `@Controller(prefix, tags)` | Controller decorator (combines Injectable + routing for Nest/Spring fan, if you're not, just use InjectableRouter) |
 | `Provide(cls)` | Explicit injection for edge cases |
 | `get_service(cls)` | Get service instance programmatically |
-| `forwardRef(lambda: Type)` | Lazy reference for circular deps |
-| `Inject(forwardRef(...))` | TRUE circular dependency (returns getter) |
+| `forwardRef(lambda: Type)` | Lazy reference for circular deps (details below) |
+| `Inject(forwardRef(...))` | TRUE circular dependency (returns getter) (details below) |
 
 ### Testing Utilities
 
@@ -157,6 +249,93 @@ async def get_order(id: str, order_service: OrderService):  # ← Auto-injected!
 | `override(cls, mock)` | Context manager to mock a provider |
 | `test_container()` | Context manager for test isolation |
 | `clear_registry()` | Clear all registrations (for testing) |
+```python
+# example
+@pytest.mark.asyncio
+async def test_orbit_simulation_determinism_with_service():
+    """
+    Test that the Orbit simulation produces deterministic results using the SimulationService.
+    
+    Uses DI override system to mock database dependencies while keeping
+    real simulation logic intact.
+    """
+    from app.services.simulation.database_provider import DatabaseProvider
+    from app.services.simulation.simulation_persistence_service import SimulationPersistenceService
+    from app.services.simulation.config_service import ConfigService
+    from app.services.simulation.here_routing_service import HereRoutingService
+    from app.services.v1.orbit.lead_filter_service import LeadFilterService
+    from app.services.v1.orbit.calendar_sync_service import CalendarSyncService
+    
+    # Create mock objects
+    mock_db_provider = Mock(spec=DatabaseProvider)
+    
+    @asynccontextmanager
+    async def mock_transaction(isolation_level=None):
+        mock_session = AsyncMock()
+        mock_session.flush = AsyncMock()
+        yield mock_session
+    
+    mock_db_provider.transaction = mock_transaction
+    mock_db_provider.session = mock_transaction
+    
+    mock_db_service = Mock(spec=SimulationPersistenceService)
+    mock_simulation_run = Mock()
+    mock_simulation_run.id = "test-run-id"
+    mock_db_service.save_simulation_run = AsyncMock(return_value=mock_simulation_run)
+    mock_db_service.update_simulation_status = AsyncMock()
+    mock_db_service.save_iterations = AsyncMock()
+    mock_db_service.extract_scheduled_visits = Mock(return_value=[])
+    mock_db_service.save_scheduled_visits = AsyncMock()
+    
+    mock_config_service = Mock(spec=ConfigService)
+    mock_config = Mock()
+    mock_config.id = 1
+    mock_config.name = "config-1"
+    mock_config.config = {}
+    mock_config_service.get_config_by_id = AsyncMock(return_value=None)
+    mock_config_service.create_config = AsyncMock(return_value=mock_config)
+    
+    mock_here_routing = Mock(spec=HereRoutingService)
+    mock_here_routing.get_polyline = AsyncMock(return_value=None)
+    mock_here_routing.get_route = AsyncMock(return_value=None)
+    
+    # Mock new services (optional for basic simulation)
+    mock_lead_filter = Mock(spec=LeadFilterService)
+    mock_calendar_sync = Mock(spec=CalendarSyncService)
+    
+    # Use DI override to inject mocks - now works because resolver skips overridden deps
+    with override(DatabaseProvider, mock_db_provider), \
+         override(SimulationPersistenceService, mock_db_service), \
+         override(ConfigService, mock_config_service), \
+         override(HereRoutingService, mock_here_routing), \
+         override(LeadFilterService, mock_lead_filter), \
+         override(CalendarSyncService, mock_calendar_sync):
+        
+        # Get SimulationService with mocked dependencies
+        simulation_service = get_service(SimulationService)
+        
+        # Create simulation config
+        config = SimulationConfig(
+            calendar_id="test@example.com",
+            start_date=datetime(2026, 1, 1).date(),
+            weeks=6,
+            max_iterations=30,
+            verbose=False,
+            leads_count=300
+        )
+        
+        # Run simulation twice with the same configuration
+        result_1 = await simulation_service.run(config)
+        result_2 = await simulation_service.run(config)
+        
+        # Assert that the results are identical
+        assert result_1.stats == result_2.stats, f"Simulation results differ: {result_1.stats} != {result_2.stats}"
+        
+        # Log the results for debugging
+        print(f"Simulation results (Run 1): {result_1.stats}")
+        print(f"Simulation results (Run 2): {result_2.stats}")
+```
+
 
 ### Lifecycle
 
@@ -381,13 +560,21 @@ async def background_task():
 
 ### Parameter Order Limitation
 
-When placing service parameters **before** required params (path, query), you must give the service a default value:
+**This is a Python language constraint, not a framework limitation.**
+
+When placing service parameters **before** required params (path, query), you must give the service a default value. This applies to **BOTH `@AutoInject` and `InjectableRouter`**.
 
 ```python
-# ❌ WRONG - Python syntax error
+# ❌ WRONG - Python syntax error (for BOTH patterns)
 @app.get("/users/{id}")
 @AutoInject
 def get_user(service: UserService, id: int):  # Error!
+    pass
+
+# Also fails with InjectableRouter!
+router = InjectableRouter()
+@router.get("/users/{id}")
+def get_user(service: UserService, id: int):  # Same error!
     pass
 
 # ✅ CORRECT - Service has default value
@@ -396,31 +583,185 @@ def get_user(service: UserService, id: int):  # Error!
 def get_user(service: UserService = None, id: int = Path()):
     pass
 
-# ✅ BEST - Put service AFTER required params
+# ✅ BEST - Put service AFTER required params (cleaner!)
 @app.get("/users/{id}")
 @AutoInject
 def get_user(id: int, service: UserService):
     pass
 ```
 
+**Why?** When the framework transforms the signature, it adds `= Depends(...)` to service params. Python doesn't allow parameters without defaults to come after parameters with defaults.
+
+```python
+# What happens internally:
+def get_user(service: UserService, id: int):
+    pass
+
+# Transforms to:
+def get_user(service: UserService = Depends(...), id: int):  # ❌ Python error!
+    pass
+```
+
+**Solution:** Always put injectable services **AFTER** required parameters!
+
 ---
 
 ## Best Practices
 
+### ✅ Controllers (Routes/Endpoints)
+
+**Always use explicit FastAPI parameter annotations** for clarity and better Swagger documentation:
+
+```python
+from fastapi import Path, Query, Body, Header
+from app.core.eagle_di import InjectableRouter, Injectable
+
+@Injectable
+class UserService:
+    def get_user(self, user_id: int) -> dict:
+        return {"id": user_id, "name": f"User{user_id}"}
+    
+    def search_users(self, query: str, limit: int) -> list:
+        return [{"name": query}][:limit]
+
+router = InjectableRouter(prefix="/api")
+
+# ✅ GOOD - Explicit parameter annotations
+@router.get("/users/{user_id}")
+async def get_user(
+    user_id: int = Path(..., description="User ID"),
+    include_metadata: bool = Query(False, description="Include metadata"),
+    service: UserService = None  # Auto-injected, can omit annotation
+):
+    return service.get_user(user_id)
+
+@router.post("/users")
+async def create_user(
+    data: dict = Body(...),
+    x_request_id: str = Header(None),
+    service: UserService = None
+):
+    return {"created": True, "request_id": x_request_id}
+
+# ❌ BAD - Implicit parameters (unclear in Swagger)
+@router.get("/search")
+async def search_users(q: str, limit: int, service: UserService):
+    # Works, but Swagger won't show parameter descriptions
+    return service.search_users(q, limit)
+```
+
+**Why?**
+- ✅ Better Swagger/OpenAPI documentation
+- ✅ Clear validation rules and descriptions
+- ✅ Easier for frontend developers to understand API
+- ✅ Type hints + FastAPI annotations = bulletproof API
+
+### ✅ Services (Business Logic)
+
+**Services should NOT use FastAPI dependencies** - keep them pure Python:
+
+```python
+from app.core.eagle_di import Injectable
+
+# ✅ GOOD - Pure Python service
+@Injectable
+class UserService:
+    def __init__(self, repo: UserRepository):
+        self.repo = repo  # DI-injected service
+    
+    def get_user(self, user_id: int) -> dict:
+        """Pure business logic - no FastAPI deps"""
+        return self.repo.find_by_id(user_id)
+    
+    def search_users(self, query: str, limit: int = 10) -> list:
+        """Simple Python parameters"""
+        return self.repo.search(query, limit)
+
+# ❌ BAD - Service with FastAPI dependencies
+@Injectable
+class BadUserService:
+    def __init__(self, db: Annotated[Session, Depends(get_db)]):
+        # ❌ Don't do this! Services should be framework-agnostic
+        self.db = db
+    
+    def get_user(self, user_id: int = Path(...)):
+        # ❌ Services shouldn't use Path/Query/Body!
+        pass
+```
+
+**Why?**
+- ✅ Services stay framework-agnostic (can be reused in CLI, workers, tests)
+- ✅ Easier to test (no FastAPI dependencies to mock)
+- ✅ Clear separation of concerns (controller = HTTP, service = business logic)
+- ✅ Services accessible via `get_service()` anywhere in codebase
+
+### ✅ Layered Architecture Pattern
+
+```python
+# ========================================
+# LAYER 1: Controllers (routes.py)
+# ========================================
+from fastapi import Path, Query, Body
+from app.core.eagle_di import InjectableRouter
+
+router = InjectableRouter(prefix="/api/users")
+
+@router.get("/{user_id}")
+async def get_user_endpoint(
+    user_id: int = Path(..., ge=1),  # FastAPI validation
+    include_posts: bool = Query(False),
+    service: UserService = None  # DI-injected
+):
+    """HTTP layer - handles request/response"""
+    return await service.get_user_with_posts(user_id, include_posts)
+
+# ========================================
+# LAYER 2: Services (services/user_service.py)
+# ========================================
+from app.core.eagle_di import Injectable
+
+@Injectable
+class UserService:
+    def __init__(self, repo: UserRepository, post_svc: PostService):
+        self.repo = repo
+        self.post_svc = post_svc
+    
+    async def get_user_with_posts(self, user_id: int, include_posts: bool) -> dict:
+        """Business logic - no FastAPI deps"""
+        user = await self.repo.get_by_id(user_id)
+        if include_posts:
+            user['posts'] = await self.post_svc.get_user_posts(user_id)
+        return user
+
+# ========================================
+# LAYER 3: Repositories (repositories/user_repo.py)
+# ========================================
+@Injectable
+class UserRepository:
+    async def get_by_id(self, user_id: int) -> dict:
+        """Data access - pure queries"""
+        # Database logic here
+        return {"id": user_id, "name": "Alice"}
+```
+
 ### ✅ DO
 
-- Use `@Injectable` for all services
-- Use `@AutoInject` for FastAPI endpoints
-- Put services **after** required params (path, query)
-- Use `get_service()` for background tasks
-- Implement `on_destroy()` for cleanup
+- ✅ Use `InjectableRouter` for production apps (5+ routes)
+- ✅ Put services **AFTER** required params in route signatures
+- ✅ Use explicit `Path()`, `Query()`, `Body()` in controllers
+- ✅ Keep services framework-agnostic (pure Python)
+- ✅ Implement `async_init()` for async setup (DB connections, etc.)
+- ✅ Use `get_service()` for programmatic access (workers, CLI)
+- ✅ Layer architecture: Controller → Service → Repository
 
 ### ❌ DON'T
 
-- Put service param before required params without `= None`
-- Abuse `forwardRef` - this is a code smell
-- Call getter in `__init__`
-- Create long circular chains (A→B→C→D→A)
+- ❌ Put service param before required params without `= None`
+- ❌ Use FastAPI `Depends()` in service constructors
+- ❌ Use `Path()`, `Query()`, `Body()` in service methods
+- ❌ Create circular dependencies (refactor instead!)
+- ❌ Call `get_service()` in `__init__` methods
+- ❌ Mix business logic in controllers (keep them thin)
 
 ---
 
@@ -433,19 +774,137 @@ Run all DI tests to verify the framework works correctly:
 pytest tests/ -v -s
 
 # Run specific test files
-pytest tests/test_injection.py -v -s      # Core functionality (13 tests)
-pytest tests/test_performance.py -v -s  # Benchmarks (10 tests)
-pytest tests/test_fastapi_integration.py -v -s # FastAPI params (15 tests)
-pytest tests/test_async_lifecycle.py -v -s # Async lifecycle (9 tests)
-pytest tests/test_benchmark_compare.py -v -s # vs dependency-injector (5 tests)
+pytest tests/test_injection.py -v -s      
 ```
+### 🤔 When to Use Which Pattern?
+
+| Pattern | Best For | Pros | Cons |
+|---------|----------|------|------|
+| **InjectableRouter** | Production apps, multiple routes | ✅ No decorator on routes<br>✅ Cleaner code<br>✅ Better organization | ➖ Slight overhead at router creation |
+| **@AutoInject + @app** | Quick prototypes, 1-5 routes | ✅ Simple setup<br>✅ Direct routing | ➖ Decorator on every route<br>➖ Less organized |
+| **@Controller** | Fans of NestJS/Spring | ✅ Familiar syntax<br>✅ Class-based<br>✅ DI in constructor | ➖ Requires registration |
+
+**Rule of Thumb:**
+- 📦 **Use `InjectableRouter`** if you have 5+ routes or are building a production app
+- ⚡ **Use `@AutoInject`** for quick scripts, demos, or very simple APIs  
+- 🎯 **Use `@Controller`** if you love NestJS/Spring and want class-based controllers
+
+---
+
+## 🎯 Method 3️⃣: @Controller (For NestJS & Spring Boot Fans)
+
+If you're coming from **NestJS** or **Spring Boot**, you'll feel right at home with this pattern!
+
+```python
+from fastapi import FastAPI, Path, Query, Body
+from app.core.eagle_di import (
+    Injectable, 
+    Controller, 
+    Get, Post, Put, Delete, Patch,
+    register_controller,
+    process_async_inits
+)
+
+# 1. Define your services (same as before)
+@Injectable
+class UserRepository:
+    def get_user(self, user_id: int) -> dict:
+        return {"id": user_id, "name": f"User{user_id}"}
+
+@Injectable
+class UserService:
+    def __init__(self, repo: UserRepository):  # DI in constructor!
+        self.repo = repo
+    
+    def get_user(self, user_id: int) -> dict:
+        return self.repo.get_user(user_id)
+    
+    def create_user(self, name: str) -> dict:
+        return {"created": True, "name": name}
+
+# 2. Define Controller with NestJS-style decorators
+@Controller(prefix="/api/users", tags=["Users"])
+class UserController:
+    def __init__(self, service: UserService):  # Service auto-injected!
+        self.service = service
+    
+    @Get()
+    def list_users(self):
+        """GET /api/users"""
+        return [{"id": 1}, {"id": 2}]
+    
+    @Get("/{user_id}")
+    def get_user(self, user_id: int = Path(..., ge=1)):
+        """GET /api/users/{user_id}"""
+        return self.service.get_user(user_id)
+    
+    @Post()
+    def create_user(self, data: dict = Body(...)):
+        """POST /api/users"""
+        return self.service.create_user(data["name"])
+    
+    @Put("/{user_id}")
+    def update_user(self, user_id: int, data: dict = Body(...)):
+        """PUT /api/users/{user_id}"""
+        return {"updated": True, "id": user_id}
+    
+    @Delete("/{user_id}")
+    def delete_user(self, user_id: int):
+        """DELETE /api/users/{user_id}"""
+        return {"deleted": True, "id": user_id}
+
+# 3. Register controller with FastAPI app
+app = FastAPI()
+register_controller(UserController, app)
+
+@app.on_event("startup")
+async def startup():
+    await process_async_inits()
+```
+
+**Multiple Controllers:**
+```python
+@Controller(prefix="/products", tags=["Products"])
+class ProductController:
+    def __init__(self, product_service: ProductService):
+        self.product_service = product_service
+    
+    @Get()
+    def list_products(self):
+        return self.product_service.list_all()
+
+app = FastAPI()
+register_controller(UserController, app)
+register_controller(ProductController, app)  # Multiple controllers!
+```
+
+**Why Controllers?**
+- ✅ **Familiar for NestJS/Spring developers** - Same @Controller, @Get, @Post pattern
+- ✅ **Class-based organization** - Services injected in constructor
+- ✅ **Clean separation** - Controller handles HTTP, service handles business logic
+- ✅ **All HTTP methods** - @Get, @Post, @Put, @Delete, @Patch
+- ✅ **Works with all FastAPI features** - Path, Query, Body, Header parameters
+
+---
+
+## 📚 Test Suite
 
 | Test File | Tests | Description |
 |-----------|-------|-------------|
-| `test_injection.py` | 13 | Core DI (singleton, override, circular deps) |
-| `test_performance.py` | 10 | Benchmarks & scalability |
+| `test_injection.py` | 19 | Core DI (singleton, override, circular deps) |
+| `test_performance.py` | 11 | Benchmarks & scalability |
 | `test_fastapi_integration.py` | 15 | Path, query, body, header params |
 | `test_async_lifecycle.py` | 9 | Async on_init/on_destroy |
-| `test_benchmark_compare.py` | 5 | Comparison with dependency-injector |
-| **Total** | **52** | ✅ All passing |
+| `test_benchmark_compare.py` | 5 | Performance vs dependency-injector |
+| `test_backward_compatibility.py` | 12 | Legacy API compatibility |
+| `test_transaction.py` | 37 | Transaction management & rollback |
+| `test_transaction_advanced.py` | 18 | Nested transactions & savepoints |
+| `test_edge_cases.py` | 20 | Error handling & edge scenarios |
+| `test_limitations.py` | 12 | Known limitations & constraints |
+| `test_injectable_router.py` | 14 | Router-level DI injection |
+| `test_controller.py` | 21 | Controller pattern implementation |
+| `test_controller_edge_cases.py` | 7 | Controller error scenarios |
+| `test_swagger_compatible.py` | 5 | OpenAPI/Swagger integration |
+| `test_advanced_features.py` | 23 | Advanced DI patterns & features |
 
+| **Total** | **228** | ✅ All passing |
