@@ -350,10 +350,10 @@ def _resolve_service_iterative(cls: Type) -> Any:
             # ✅ Early marking: check and add in one step
             if isinstance(ann, ForwardRef):
                 resolved = ann.resolve()
-                if resolved not in seen and resolved in _registry:
+                if resolved not in seen and resolved in _registry and resolved not in _instances:
                     seen.add(resolved)  # ✅ Mark before appending
                     to_resolve.append(resolved)
-            elif ann in _registry and ann not in seen:
+            elif ann in _registry and ann not in seen and ann not in _instances:
                 seen.add(ann)  # ✅ Mark before appending
                 to_resolve.append(ann)
 
@@ -632,7 +632,33 @@ def Injectable(cls: Type[T]) -> Type[T]:
             dep_count += 1
 
         elif param.default is not inspect.Parameter.empty:
-            default, dep_type = param.default, "📌 default"
+            # ✅ FIX: Wrap default value in hidden Depends() to prevent Swagger exposure
+            # 
+            # FastAPI recursively scans ALL nested Depends() chains and exposes
+            # any parameter without Depends() as a request parameter in Swagger.
+            #
+            # By wrapping the default value in Depends(), we tell FastAPI:
+            # "This param is already handled - don't expose it to the user"
+            #
+            # Example: precision: int = 5 → precision: int = Depends(lambda: 5)
+            # Result: precision is hidden from Swagger but still works internally
+            
+            default_value = param.default
+            
+            def make_default_provider(val):
+                """Create a provider that returns the default value."""
+                def default_provider():
+                    return val
+                # Set signature to hide from FastAPI's param scanning
+                default_provider.__signature__ = inspect.Signature(
+                    return_annotation=annotation if annotation != inspect.Parameter.empty else type(val)
+                )
+                default_provider.__name__ = f"default_{name}"
+                return default_provider
+            
+            default = Depends(make_default_provider(default_value))
+            dep_type = "� hidden default"
+
 
         type_name = getattr(annotation, "__name__", str(annotation))
         _lazy_log(lambda n=name, tn=type_name, dt=dep_type: f"   ├─ {n}: {tn} {dt}")
@@ -863,15 +889,15 @@ def get_service(cls: Type[T]) -> T:
     Services with ``Depends()`` on request-scoped resources (e.g., DB sessions)
     cannot be created outside request context. Pass the session explicitly.
     """
-    if cls not in _registry:
+    if (instance := _instances.get(cls)) is not None:
+        return instance
+
+    provider = _registry.get(cls)
+    if provider is None:
         raise ValueError(f"{cls.__name__} is not @Injectable")
 
-    if cls in _instances:
-        return _instances[cls]
-
     try:
-        instance = _resolve_service_iterative(cls)
-        return instance
+        return _resolve_service_iterative(cls)
     except Exception as e:
         raise RuntimeError(
             f"Cannot create {cls.__name__} outside FastAPI context. "

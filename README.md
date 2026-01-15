@@ -1,7 +1,7 @@
 # 🔧 Class-level Dependency Injection
 
 <p align="center">
-  <img src="docs/di_logo.png" alt="DI Framework Logo" width="350">
+  <img src="docs/di_logo.png" alt="DI Framework Logo" width="400">
 </p>
 
 <h2 align="center"><em>EAGLE DI</em></h2>
@@ -430,14 +430,14 @@ Run all DI tests to verify the framework works correctly:
 
 ```bash
 # Run all DI tests
-pytest tests/unit/DI/ -v
+pytest tests/ -v -s
 
 # Run specific test files
-pytest tests/unit/DI/test_injection.py -v       # Core functionality (13 tests)
-pytest tests/unit/DI/test_performance.py -v -s  # Benchmarks (10 tests)
-pytest tests/unit/DI/test_fastapi_integration.py -v  # FastAPI params (15 tests)
-pytest tests/unit/DI/test_async_lifecycle.py -v  # Async lifecycle (9 tests)
-pytest tests/unit/DI/test_benchmark_compare.py -v  # vs dependency-injector (5 tests)
+pytest tests/test_injection.py -v -s      # Core functionality (13 tests)
+pytest tests/test_performance.py -v -s  # Benchmarks (10 tests)
+pytest tests/test_fastapi_integration.py -v -s # FastAPI params (15 tests)
+pytest tests/test_async_lifecycle.py -v -s # Async lifecycle (9 tests)
+pytest tests/test_benchmark_compare.py -v -s # vs dependency-injector (5 tests)
 ```
 
 | Test File | Tests | Description |
