@@ -19,7 +19,7 @@ from typing import Optional, Annotated
 
 from app.core.eagle_di import (
     Injectable,
-    AutoInject,
+    InjectableRouter,
     test_container,
 )
 
@@ -62,11 +62,15 @@ class TestLevel1PathParams:
                     return {"id": user_id, "name": f"User{user_id}"}
 
             app = FastAPI()
+            router = InjectableRouter()
+            router = InjectableRouter()
 
-            @app.get("/users/{user_id}")
-            @AutoInject
+            @router.get("/users/{user_id}")
             def get_user(user_id: int, service: UserService):
                 return service.get_user(user_id)
+
+            app.include_router(router)
+            app.include_router(router)
 
             client = TestClient(app)
             response = client.get("/users/123")
@@ -83,13 +87,17 @@ class TestLevel1PathParams:
                     return {"id": user_id, "name": f"User{user_id}"}
 
             app = FastAPI()
+            router = InjectableRouter()
+            router = InjectableRouter()
 
-            @app.get("/orgs/{org_id}/users/{user_id}")
-            @AutoInject
+            @router.get("/orgs/{org_id}/users/{user_id}")
             def get_org_user(org_id: int, user_id: int, service: UserService):
                 user = service.get_user(user_id)
                 user["org_id"] = org_id
                 return user
+
+            app.include_router(router)
+            app.include_router(router)
 
             client = TestClient(app)
             response = client.get("/orgs/10/users/5")
@@ -115,11 +123,14 @@ class TestLevel2QueryParams:
                     return f"Hello, {name}!"
 
             app = FastAPI()
+            router = InjectableRouter()
 
-            @app.get("/search")
-            @AutoInject
+            @router.get("/search")
             def search(q: str, service: SimpleService):
                 return {"query": q, "greeting": service.greet(q)}
+
+            app.include_router(router)
+
 
             client = TestClient(app)
             response = client.get("/search?q=World")
@@ -136,11 +147,14 @@ class TestLevel2QueryParams:
                     return f"Hello, {name}!"
 
             app = FastAPI()
+            router = InjectableRouter()
 
-            @app.get("/greet")
-            @AutoInject
+            @router.get("/greet")
             def greet(name: str = "Guest", service: SimpleService = None):
                 return {"greeting": service.greet(name)}
+
+            app.include_router(router)
+
 
             client = TestClient(app)
             
@@ -160,15 +174,18 @@ class TestLevel2QueryParams:
                 pass
 
             app = FastAPI()
+            router = InjectableRouter()
 
-            @app.get("/items")
-            @AutoInject
+            @router.get("/items")
             def get_items(
                 skip: int = Query(0, ge=0),
                 limit: int = Query(10, le=100),
                 service: SimpleService = None
             ):
                 return {"skip": skip, "limit": limit}
+
+            app.include_router(router)
+
 
             client = TestClient(app)
             response = client.get("/items?skip=5&limit=20")
@@ -194,11 +211,14 @@ class TestLevel3RequestBody:
                     return {"name": name, "email": email, "created": True}
 
             app = FastAPI()
+            router = InjectableRouter()
 
-            @app.post("/users")
-            @AutoInject
+            @router.post("/users")
             def create_user(user: UserCreate, service: UserService):
                 return service.create_user(user.name, user.email)
+
+            app.include_router(router)
+
 
             client = TestClient(app)
             response = client.post("/users", json={
@@ -221,15 +241,18 @@ class TestLevel3RequestBody:
                 pass
 
             app = FastAPI()
+            router = InjectableRouter()
 
-            @app.post("/orders")
-            @AutoInject
+            @router.post("/orders")
             def create_order(order: OrderCreate, service: UserService):
                 return {
                     "product_id": order.product_id,
                     "quantity": order.quantity,
                     "notes": order.notes
                 }
+
+            app.include_router(router)
+
 
             client = TestClient(app)
             
@@ -265,11 +288,14 @@ class TestLevel4Headers:
                 pass
 
             app = FastAPI()
+            router = InjectableRouter()
 
-            @app.get("/protected")
-            @AutoInject
+            @router.get("/protected")
             def protected(x_token: str = Header(), service: SimpleService = None):
                 return {"token": x_token}
+
+            app.include_router(router)
+
 
             client = TestClient(app)
             response = client.get("/protected", headers={"X-Token": "secret123"})
@@ -285,14 +311,17 @@ class TestLevel4Headers:
                 pass
 
             app = FastAPI()
+            router = InjectableRouter()
 
-            @app.get("/info")
-            @AutoInject
+            @router.get("/info")
             def info(
                 x_request_id: Optional[str] = Header(None),
                 service: SimpleService = None
             ):
                 return {"request_id": x_request_id}
+
+            app.include_router(router)
+
 
             client = TestClient(app)
             
@@ -321,9 +350,9 @@ class TestLevel5Combined:
                 pass
 
             app = FastAPI()
+            router = InjectableRouter()
 
-            @app.put("/users/{user_id}")
-            @AutoInject
+            @router.put("/users/{user_id}")
             def update_user(
                 user_id: int,
                 update: UserUpdate,
@@ -338,6 +367,9 @@ class TestLevel5Combined:
                     "admin": x_admin_key == "admin123"
                 }
                 return result
+
+            app.include_router(router)
+
 
             client = TestClient(app)
             response = client.put(
@@ -371,9 +403,9 @@ class TestLevel5Combined:
                     return f"Welcome, {user['name']}!"
 
             app = FastAPI()
+            router = InjectableRouter()
 
-            @app.post("/orgs/{org_id}/users/{user_id}/greet")
-            @AutoInject
+            @router.post("/orgs/{org_id}/users/{user_id}/greet")
             def greet_user(
                 org_id: int,
                 user_id: int,
@@ -388,6 +420,9 @@ class TestLevel5Combined:
                     "custom_message": message,
                     "language": x_lang
                 }
+
+            app.include_router(router)
+
 
             client = TestClient(app)
             response = client.post(
@@ -423,12 +458,15 @@ class TestLevel6EdgeCases:
                 pass
 
             app = FastAPI()
+            router = InjectableRouter()
 
             # NOTE: Service MUST have default (= None) when placed before required params
-            @app.get("/test1/{id}")
-            @AutoInject
+            @router.get("/test1/{id}")
             def test1(service: SimpleService = None, id: int = Path()):
                 return {"id": id}
+
+            app.include_router(router)
+
 
             client = TestClient(app)
             response = client.get("/test1/5")
@@ -442,11 +480,14 @@ class TestLevel6EdgeCases:
                 pass
 
             app = FastAPI()
+            router = InjectableRouter()
 
-            @app.get("/test2/{id}")
-            @AutoInject
+            @router.get("/test2/{id}")
             def test2(id: int, service: SimpleService, name: str = "default"):
                 return {"id": id, "name": name}
+
+            app.include_router(router)
+
 
             client = TestClient(app)
             response = client.get("/test2/5?name=test")
@@ -466,9 +507,9 @@ class TestLevel6EdgeCases:
                     return {"id": user_id, "name": f"User{user_id}"}
 
             app = FastAPI()
+            router = InjectableRouter()
 
-            @app.get("/multi")
-            @AutoInject
+            @router.get("/multi")
             def multi(
                 svc1: SimpleService,
                 svc2: UserService,
@@ -478,6 +519,9 @@ class TestLevel6EdgeCases:
                     "greeting": svc1.greet(name),
                     "user": svc2.get_user(1)
                 }
+
+            app.include_router(router)
+
 
             client = TestClient(app)
             response = client.get("/multi")
@@ -504,30 +548,30 @@ class TestSummary:
                 pass
 
             app = FastAPI()
+            router = InjectableRouter()
             
             # 1. Path params
-            @app.get("/t1/{id}")
-            @AutoInject
+            @router.get("/t1/{id}")
             def t1(id: int, s: SimpleService): 
                 return {"ok": True}
             
             # 2. Query params
-            @app.get("/t2")
-            @AutoInject  
+            @router.get("/t2")
             def t2(q: str = "x", s: SimpleService = None): 
                 return {"ok": True}
             
             # 3. Body
-            @app.post("/t3")
-            @AutoInject
+            @router.post("/t3")
             def t3(b: UserCreate, s: SimpleService = None): 
                 return {"ok": True}
             
             # 4. Headers
-            @app.get("/t4")
-            @AutoInject
+            @router.get("/t4")
             def t4(h: str = Header("x"), s: SimpleService = None): 
                 return {"ok": True}
+
+            app.include_router(router)
+
 
             client = TestClient(app)
             

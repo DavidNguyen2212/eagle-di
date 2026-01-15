@@ -58,14 +58,17 @@ from typing import (
     get_type_hints,
 )
 
-from fastapi import Depends
+from fastapi import APIRouter, Depends
 from fastapi.params import Depends as DependsType
+from fastapi.routing import APIRoute
 
 __all__ = [
     # Core decorators
     "Injectable",
     "AutoInject",
     "Controller",
+    # Router
+    "InjectableRouter",
     # Dependency providers
     "Provide",
     "get_service",
@@ -348,6 +351,7 @@ def _resolve_service_iterative(cls: Type) -> Any:
                 ann, *_ = get_args(ann)
 
             # ✅ Early marking: check and add in one step
+            # ✅ Also skip if already in _instances (e.g., overridden for tests)
             if isinstance(ann, ForwardRef):
                 resolved = ann.resolve()
                 if resolved not in seen and resolved in _registry and resolved not in _instances:
@@ -659,7 +663,6 @@ def Injectable(cls: Type[T]) -> Type[T]:
             default = Depends(make_default_provider(default_value))
             dep_type = "� hidden default"
 
-
         type_name = getattr(annotation, "__name__", str(annotation))
         _lazy_log(lambda n=name, tn=type_name, dt=dep_type: f"   ├─ {n}: {tn} {dt}")
 
@@ -684,38 +687,30 @@ def Injectable(cls: Type[T]) -> Type[T]:
     return cls
 
 
-def AutoInject(func: Callable) -> Callable:
+def _transform_endpoint_signature(func: Callable) -> Callable:
     """
-    Automatically inject dependencies into a FastAPI endpoint.
-
-    Apply this decorator to route handlers to enable automatic dependency
-    resolution based on type hints. Works with both sync and async handlers.
-
+    Transform endpoint signature to inject dependencies via Depends().
+    
+    This is the core transformation logic used by both AutoInject decorator
+    and InjectableRouter. It modifies the function's __signature__ to replace
+    Injectable type hints with Depends() wrappers.
+    
     Parameters
     ----------
     func : Callable
-        The route handler function.
-
+        The endpoint function to transform.
+        
     Returns
     -------
     Callable
-        The same function with modified signature for FastAPI DI.
-
-    Examples
-    --------
-    >>> @router.get("/users/{id}")
-    ... @AutoInject
-    ... async def get_user(id: str, service: UserService):
-    ...     return await service.get_user(id)
-
-    Notes
-    -----
-    - Must be applied AFTER ``@router`` decorators.
-    - Only injects parameters with types registered via ``@Injectable``.
-    - Non-injectable parameters (e.g., path params) are left unchanged.
+        The same function with modified __signature__.
     """
+    # Skip if already transformed
+    if getattr(func, '_di_transformed', False):
+        return func
+    
     _lazy_log(lambda: f"\n{'─'*60}")
-    _lazy_log(lambda: f"🎯 Auto-injecting endpoint: {func.__name__}")
+    _lazy_log(lambda: f"🎯 Transforming endpoint: {func.__name__}")
 
     sig = _get_cached_signature(func)
     type_hints = _get_cached_type_hints(func)
@@ -766,11 +761,152 @@ def AutoInject(func: Callable) -> Callable:
         parameters=new_params,
         return_annotation=sig.return_annotation,
     )
+    
+    # CRITICAL: Also update __annotations__ to remove Injectable types
+    # FastAPI reads both __signature__ AND __annotations__
+    # If we don't clear Injectable types from __annotations__,
+    # FastAPI will try to validate them as Pydantic fields
+    new_annotations = {}
+    
+    # Iterate through all parameters in the signature
+    for name, param in sig.parameters.items():
+        annotation = type_hints.get(name, param.annotation)
+        
+        # Check if this is an Injectable type that should be removed
+        is_injectable = False
+        
+        if get_origin(annotation) is Annotated:
+            actual_type, *_ = get_args(annotation)
+            is_injectable = actual_type in _registry or isinstance(actual_type, (ForwardRef, type(LazyInject)))
+        elif annotation != inspect.Parameter.empty:
+            is_injectable = annotation in _registry or isinstance(annotation, (ForwardRef, type(LazyInject)))
+        
+        # Keep non-Injectable annotations (preserve original from __annotations__ if exists)
+        if not is_injectable and annotation != inspect.Parameter.empty:
+            if hasattr(func, '__annotations__') and name in func.__annotations__:
+                new_annotations[name] = func.__annotations__[name]
+            else:
+                new_annotations[name] = annotation
+    
+    # Preserve return annotation
+    if hasattr(func, '__annotations__') and 'return' in func.__annotations__:
+        new_annotations['return'] = func.__annotations__['return']
+    
+    func.__annotations__ = new_annotations
+    
+    # Mark as transformed to avoid double-processing
+    func._di_transformed = True
 
     _lazy_log(lambda i=injected, t=len(new_params): f"   ✅ Injected: {i}/{t} params")
     _lazy_log(lambda: f"{'─'*60}\n")
 
     return func
+
+
+def AutoInject(func: Callable) -> Callable:
+    """
+    Mark a FastAPI endpoint for automatic dependency injection.
+
+    This decorator transforms the function signature immediately to inject
+    dependencies for all `@Injectable` types. It works with both regular
+    `FastAPI()` app routes and `InjectableRouter` routes.
+
+    Parameters
+    ----------
+    func : Callable
+        The route handler function.
+
+    Returns
+    -------
+    Callable
+        The transformed function with modified signature.
+
+    Examples
+    --------
+    With regular FastAPI app (simple CRUD):
+    
+    >>> app = FastAPI()
+    >>> @app.get("/users/{id}")
+    ... @AutoInject
+    ... async def get_user(id: str, service: UserService):
+    ...     return await service.get_user(id)
+
+    With InjectableRouter (recommended for larger projects):
+    
+    >>> router = InjectableRouter()
+    >>> @router.get("/users/{id}")  # @AutoInject optional
+    ... async def get_user(id: str, service: UserService):
+    ...     return await service.get_user(id)
+
+    Notes
+    -----
+    - Works with both decorator positions (above or below route decorator)
+    - Transforms signature immediately for compatibility with @app routes
+    - Only injects parameters with types registered via ``@Injectable``
+    - Non-injectable parameters (e.g., path params) are left unchanged
+    """
+    # Immediately transform the signature for both @app and InjectableRouter compatibility
+    return _transform_endpoint_signature(func)
+
+
+class InjectableRouter(APIRouter):
+    """
+    FastAPI router with automatic dependency injection support.
+    
+    This router subclass intercepts route registration and transforms
+    all endpoints to inject dependencies for Injectable types.
+    
+    The key advantage is that ``@AutoInject`` can be placed ABOVE the
+    router decorator for documentation purposes, but actual transformation
+    happens at route registration time.
+    
+    All endpoints registered with this router will have their Injectable
+    type hints automatically wrapped with Depends(). Non-injectable
+    parameters are left unchanged.
+    
+    Examples
+    --------
+    >>> from app.core.injector import InjectableRouter, AutoInject, Injectable
+    >>>
+    >>> router = InjectableRouter()
+    >>>
+    >>> @Injectable
+    ... class UserService:
+    ...     def get_user(self, id: str) -> dict:
+    ...         return {"id": id}
+    >>>
+    >>> @AutoInject  # Optional: for documentation/clarity
+    ... @router.get("/users/{id}")
+    ... async def get_user(id: str, service: UserService):
+    ...     return service.get_user(id)
+    
+    Notes
+    -----
+    - All endpoints are automatically transformed (no @AutoInject required).
+    - @AutoInject is kept as optional marker for code documentation.
+    - Can be used as drop-in replacement for ``APIRouter``.
+    - Supports all ``APIRouter`` parameters (prefix, tags, etc.).
+    """
+    
+    def add_api_route(
+        self,
+        path: str,
+        endpoint: Callable,
+        **kwargs,
+    ) -> None:
+        """
+        Add a route to the router, transforming endpoints for DI.
+        
+        This method intercepts route registration and transforms ALL
+        endpoints to inject dependencies. The transformation is safe
+        for endpoints without Injectable types - they are left unchanged.
+        """
+        # Always transform - _transform_endpoint_signature handles
+        # non-injectable params gracefully and skips already-transformed
+        endpoint = _transform_endpoint_signature(endpoint)
+        
+        # Call parent implementation
+        super().add_api_route(path, endpoint, **kwargs)
 
 
 def Controller(prefix: str = "", tags: list[str] | None = None):
@@ -798,6 +934,10 @@ def Controller(prefix: str = "", tags: list[str] | None = None):
     ... class UserController:
     ...     def __init__(self, service: UserService):
     ...         self.service = service
+    ...     
+    ...     @Get("/{id}")
+    ...     def get_user(self, id: int):
+    ...         return self.service.get_user(id)
     """
     def decorator(cls: Type[T]) -> Type[T]:
         cls.__controller__ = True
@@ -805,6 +945,177 @@ def Controller(prefix: str = "", tags: list[str] | None = None):
         cls.__tags__ = tags or []
         return Injectable(cls)
     return decorator
+
+
+# =============================================================================
+# NestJS-Style Route Decorators
+# =============================================================================
+
+
+def Get(path: str = "", **kwargs):
+    """
+    Mark a method as a GET route (NestJS-style).
+    
+    Examples
+    --------
+    >>> @Controller(prefix="/users")
+    ... class UserController:
+    ...     @Get("/{id}")
+    ...     def get_user(self, id: int):
+    ...         return {"id": id}
+    """
+    def decorator(func: Callable) -> Callable:
+        func.__route_method__ = "GET"
+        func.__route_path__ = path
+        func.__route_kwargs__ = kwargs
+        return func
+    return decorator
+
+
+def Post(path: str = "", **kwargs):
+    """Mark a method as a POST route (NestJS-style)."""
+    def decorator(func: Callable) -> Callable:
+        func.__route_method__ = "POST"
+        func.__route_path__ = path
+        func.__route_kwargs__ = kwargs
+        return func
+    return decorator
+
+
+def Put(path: str = "", **kwargs):
+    """Mark a method as a PUT route (NestJS-style)."""
+    def decorator(func: Callable) -> Callable:
+        func.__route_method__ = "PUT"
+        func.__route_path__ = path
+        func.__route_kwargs__ = kwargs
+        return func
+    return decorator
+
+
+def Delete(path: str = "", **kwargs):
+    """Mark a method as a DELETE route (NestJS-style)."""
+    def decorator(func: Callable) -> Callable:
+        func.__route_method__ = "DELETE"
+        func.__route_path__ = path
+        func.__route_kwargs__ = kwargs
+        return func
+    return decorator
+
+
+def Patch(path: str = "", **kwargs):
+    """Mark a method as a PATCH route (NestJS-style)."""
+    def decorator(func: Callable) -> Callable:
+        func.__route_method__ = "PATCH"
+        func.__route_path__ = path
+        func.__route_kwargs__ = kwargs
+        return func
+    return decorator
+
+
+def register_controller(controller_class: Type, app_or_router) -> None:
+    """
+    Register a @Controller class routes to FastAPI app or router.
+    
+    This enables NestJS/Spring-style controller pattern where routes are
+    defined as class methods with @Get, @Post, etc. decorators.
+    
+    Parameters
+    ----------
+    controller_class : Type
+        Controller class decorated with @Controller
+    app_or_router : FastAPI | APIRouter
+        FastAPI app or router to register routes to
+        
+    Examples
+    --------
+    >>> @Controller(prefix="/users", tags=["Users"])
+    ... class UserController:
+    ...     def __init__(self, service: UserService):
+    ...         self.service = service
+    ...     
+    ...     @Get("/{id}")
+    ...     def get_user(self, id: int):
+    ...         return self.service.get_user(id)
+    ...     
+    ...     @Post()
+    ...     def create_user(self, data: dict):
+    ...         return self.service.create(data)
+    
+    >>> app = FastAPI()
+    >>> register_controller(UserController, app)
+    """
+    if not hasattr(controller_class, "__controller__"):
+        raise ValueError(f"{controller_class.__name__} is not a @Controller")
+    
+    # Get controller metadata
+    prefix = getattr(controller_class, "__prefix__", "")
+    tags = getattr(controller_class, "__tags__", [])
+    
+    # Get controller instance (singleton)
+    controller_instance = get_service(controller_class)
+    
+    # Scan for route methods
+    for attr_name in dir(controller_class):
+        attr = getattr(controller_class, attr_name)
+        
+        if hasattr(attr, "__route_method__"):
+            method = attr.__route_method__
+            path = attr.__route_path__
+            kwargs = attr.__route_kwargs__.copy()
+            
+            # Merge controller tags with route tags
+            if tags and "tags" not in kwargs:
+                kwargs["tags"] = tags
+            
+            # Get the unbound method from class
+            class_method = getattr(controller_class, attr_name)
+            
+            # Get signature from unbound method
+            sig = inspect.signature(class_method)
+            
+            # Create params without 'self'
+            params_without_self = [
+                p for name, p in sig.parameters.items() 
+                if name != "self"
+            ]
+            
+            # Check if original method is async
+            is_async = inspect.iscoroutinefunction(class_method)
+            
+            # Create endpoint that calls controller method
+            # IMPORTANT: Bind attr_name to avoid closure issue in loop
+            if is_async:
+                async def endpoint_func(_method_name=attr_name, **kwargs_inner):
+                    # Call bound method on instance
+                    method_to_call = getattr(controller_instance, _method_name)
+                    return await method_to_call(**kwargs_inner)
+            else:
+                async def endpoint_func(_method_name=attr_name, **kwargs_inner):
+                    # Call bound method on instance
+                    method_to_call = getattr(controller_instance, _method_name)
+                    return method_to_call(**kwargs_inner)
+            
+            # Set signature and annotations (without 'self' and without _method_name)
+            # NOTE: We DON'T call _transform_endpoint_signature here because:
+            # 1. DI happens in constructor (__init__), not in method parameters
+            # 2. Method parameters are FastAPI path/query/body params, not services
+            endpoint_func.__signature__ = inspect.Signature(params_without_self)
+            endpoint_func.__annotations__ = {
+                name: p.annotation 
+                for name, p in sig.parameters.items() 
+                if name != "self"
+            }
+            if sig.return_annotation != inspect.Signature.empty:
+                endpoint_func.__annotations__["return"] = sig.return_annotation
+            
+            # Register route
+            full_path = f"{prefix}{path}"
+            app_or_router.add_api_route(
+                full_path,
+                endpoint_func,
+                methods=[method],
+                **kwargs
+            )
 
 
 # =============================================================================
