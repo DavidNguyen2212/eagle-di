@@ -16,6 +16,8 @@ Type hint-based DI for FastAPI. Auto-inject services without explicit `Depends()
 
 **A pure Python, zero-dependency DI mini utility built specifically for FastAPI applications.**
 
+> 📦 **Looking for more utilities?** Check out the [docs/](docs/) folder for additional features like Spring-style [`@Transactional`](docs/TRANSACTION.md) decorator with propagation modes, isolation levels, and rollback rules.
+
 ---
 
 ## 🚨 v4.0.0 Breaking Changes
@@ -889,22 +891,57 @@ register_controller(ProductController, app)  # Multiple controllers!
 
 ## 📚 Test Suite
 
+Tests are organized into logical groups for easy navigation:
+
+```
+tests/
+├── core/              # Core DI functionality
+├── integration/       # FastAPI integration
+├── controller/        # Controller pattern
+├── transaction/       # Transaction management
+└── benchmarks/        # Performance tests
+```
+
+### `tests/core/` - Core DI (83 tests)
+
 | Test File | Tests | Description |
 |-----------|-------|-------------|
-| `test_injection.py` | 19 | Core DI (singleton, override, circular deps) |
-| `test_performance.py` | 11 | Benchmarks & scalability |
-| `test_fastapi_integration.py` | 15 | Path, query, body, header params |
-| `test_async_lifecycle.py` | 9 | Async on_init/on_destroy |
-| `test_benchmark_compare.py` | 5 | Performance vs dependency-injector |
-| `test_backward_compatibility.py` | 12 | Legacy API compatibility |
-| `test_transaction.py` | 37 | Transaction management & rollback |
-| `test_transaction_advanced.py` | 18 | Nested transactions & savepoints |
+| `test_injection.py` | 19 | Singleton, override, circular deps |
+| `test_advanced_features.py` | 23 | Advanced DI patterns & features |
 | `test_edge_cases.py` | 20 | Error handling & edge scenarios |
 | `test_limitations.py` | 12 | Known limitations & constraints |
+| `test_async_lifecycle.py` | 9 | Async on_init/on_destroy |
+
+### `tests/integration/` - FastAPI Integration (46 tests)
+
+| Test File | Tests | Description |
+|-----------|-------|-------------|
+| `test_fastapi_integration.py` | 15 | Path, query, body, header params |
 | `test_injectable_router.py` | 14 | Router-level DI injection |
+| `test_backward_compatibility.py` | 12 | Legacy API compatibility |
+| `test_swagger_compatible.py` | 5 | OpenAPI/Swagger integration |
+
+### `tests/controller/` - Controller Pattern (28 tests)
+
+| Test File | Tests | Description |
+|-----------|-------|-------------|
 | `test_controller.py` | 21 | Controller pattern implementation |
 | `test_controller_edge_cases.py` | 7 | Controller error scenarios |
-| `test_swagger_compatible.py` | 5 | OpenAPI/Swagger integration |
-| `test_advanced_features.py` | 23 | Advanced DI patterns & features |
+
+### `tests/transaction/` - Transaction Management (55 tests)
+
+| Test File | Tests | Description |
+|-----------|-------|-------------|
+| `test_transaction.py` | 37 | Transaction management & rollback |
+| `test_transaction_advanced.py` | 18 | Nested transactions & savepoints |
+
+### `tests/benchmarks/` - Performance (16 tests)
+
+| Test File | Tests | Description |
+|-----------|-------|-------------|
+| `test_performance.py` | 11 | Benchmarks & scalability |
+| `test_benchmark_compare.py` | 5 | Performance vs dependency-injector |
+
+---
 
 | **Total** | **228** | ✅ All passing |
