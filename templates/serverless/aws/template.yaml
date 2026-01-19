@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Eagle DI FastAPI Application on AWS Lambda
+  
+  Deploy a FastAPI application with Eagle DI to AWS Lambda using SAM.
+  Uses Mangum adapter for ASGI compatibility.
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Deployment stage
+  
+  DatabaseUrl:
+    Type: String
+    Default: ""
+    Description: Database connection URL (optional)
+  
+  MemorySize:
+    Type: Number
+    Default: 256
+    MinValue: 128
+    MaxValue: 3008
+    Description: Lambda function memory in MB
+  
+  Timeout:
+    Type: Number
+    Default: 30
+    MinValue: 3
+    MaxValue: 900
+    Description: Lambda function timeout in seconds
+
+Globals:
+  Function:
+    Timeout: !Ref Timeout
+    MemorySize: !Ref MemorySize
+    Runtime: python3.11
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        STAGE: !Ref Stage
+        DATABASE_URL: !Ref DatabaseUrl
+        # Optimize for Lambda
+        PYTHONUNBUFFERED: "1"
+
+Resources:
+  # FastAPI Lambda Function
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "eagle-di-api-${Stage}"
+      Handler: app.main.handler
+      CodeUri: ./
+      Description: Eagle DI FastAPI Application
+      
+      # VPC Configuration (uncomment if needed)
+      # VpcConfig:
+      #   SecurityGroupIds:
+      #     - !Ref LambdaSecurityGroup
+      #   SubnetIds:
+      #     - !Ref PrivateSubnet1
+      #     - !Ref PrivateSubnet2
+      
+      Events:
+        # Catch-all HTTP API route
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+            ApiId: !Ref HttpApi
+        
+        # Root path
+        RootApi:
+          Type: HttpApi
+          Properties:
+            Path: /
+            Method: ANY
+            ApiId: !Ref HttpApi
+        
+        # Warmup event (optional - for provisioned concurrency)
+        WarmupSchedule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(5 minutes)
+            Input: '{"warmup": true}'
+            Enabled: false  # Enable for production
+      
+      # Provisioned Concurrency (optional - reduces cold starts)
+      # ProvisionedConcurrencyConfig:
+      #   ProvisionedConcurrentExecutions: 2
+      
+      Tags:
+        Project: eagle-di
+        Stage: !Ref Stage
+  
+  # HTTP API (API Gateway v2)
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Stage
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowHeaders:
+          - "*"
+        AllowMethods:
+          - "*"
+      # Custom domain (uncomment and configure)
+      # Domain:
+      #   DomainName: api.example.com
+      #   CertificateArn: arn:aws:acm:...
+
+Outputs:
+  ApiEndpoint:
+    Description: HTTP API endpoint URL
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}"
+  
+  FunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt ApiFunction.Arn
+  
+  FunctionName:
+    Description: Lambda function name
+    Value: !Ref ApiFunction
