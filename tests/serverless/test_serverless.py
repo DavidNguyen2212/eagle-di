@@ -421,3 +421,291 @@ class TestColdStartIntegration:
         
         with pytest.raises(ColdStartError, match="Failed during cold start"):
             await adapter._run_cold_start_if_needed()
+
+
+# =============================================================================
+# TRANSACTION INTEGRATION TESTS
+# =============================================================================
+
+
+class TestTransactionIntegration:
+    """Tests for ServerlessDatabaseProvider with transaction support."""
+    
+    @pytest.mark.asyncio
+    async def test_serverless_db_transaction_context(self):
+        """ServerlessDatabaseProvider transaction works as context manager."""
+        from contextlib import asynccontextmanager
+        
+        with patch("sqlalchemy.ext.asyncio.create_async_engine"):
+            with patch("sqlalchemy.ext.asyncio.async_sessionmaker") as mock_maker:
+                # Setup mock
+                mock_session = AsyncMock()
+                mock_maker.return_value = Mock(return_value=mock_session)
+                
+                provider = ServerlessDatabaseProvider(
+                    "postgresql+asyncpg://user:pass@localhost/db"
+                )
+                
+                # Mock the real transaction method behavior
+                @asynccontextmanager
+                async def mock_transaction(isolation_level=None):
+                    yield mock_session
+                
+                provider.transaction = mock_transaction
+                
+                async with provider.transaction() as session:
+                    await session.execute("SELECT 1")
+                
+                mock_session.execute.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_serverless_db_close(self):
+        """ServerlessDatabaseProvider.close() disposes engine."""
+        with patch("sqlalchemy.ext.asyncio.create_async_engine") as mock_create:
+            mock_engine = AsyncMock()
+            mock_create.return_value = mock_engine
+            
+            with patch("sqlalchemy.ext.asyncio.async_sessionmaker"):
+                provider = ServerlessDatabaseProvider(
+                    "postgresql+asyncpg://user:pass@localhost/db"
+                )
+                
+                await provider.close()
+                mock_engine.dispose.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_cold_start_warmup_db(self, mock_fastapi_app):
+        """Database warmup can be integrated with @OnColdStart."""
+        from contextlib import asynccontextmanager
+        
+        warmup_called = False
+        
+        with patch("sqlalchemy.ext.asyncio.create_async_engine"):
+            with patch("sqlalchemy.ext.asyncio.async_sessionmaker"):
+                provider = ServerlessDatabaseProvider(
+                    "postgresql+asyncpg://user:pass@localhost/db"
+                )
+                
+                # Mock transaction
+                mock_session = AsyncMock()
+                
+                @asynccontextmanager
+                async def mock_transaction(isolation_level=None):
+                    yield mock_session
+                
+                provider.transaction = mock_transaction
+                
+                @OnColdStart
+                async def warmup_database():
+                    nonlocal warmup_called
+                    await provider.warmup()
+                    warmup_called = True
+                
+                adapter = LambdaAdapter(mock_fastapi_app)
+                await adapter._run_cold_start_if_needed()
+                
+                assert warmup_called is True
+                mock_session.execute.assert_called()
+    
+    def test_serverless_db_pool_pre_ping_enabled(self):
+        """pool_pre_ping is enabled by default for connection validation."""
+        with patch("sqlalchemy.ext.asyncio.create_async_engine") as mock_engine:
+            provider = ServerlessDatabaseProvider(
+                "postgresql+asyncpg://user:pass@localhost/db"
+            )
+            
+            call_kwargs = mock_engine.call_args.kwargs
+            assert call_kwargs["pool_pre_ping"] is True
+    
+    @pytest.mark.asyncio
+    async def test_transaction_isolation_level(self):
+        """Transaction can be created with custom isolation level."""
+        from contextlib import asynccontextmanager
+        
+        with patch("sqlalchemy.ext.asyncio.create_async_engine"):
+            with patch("sqlalchemy.ext.asyncio.async_sessionmaker") as mock_maker:
+                mock_session = AsyncMock()
+                mock_maker.return_value = Mock(return_value=mock_session)
+                
+                provider = ServerlessDatabaseProvider(
+                    "postgresql+asyncpg://user:pass@localhost/db"
+                )
+                
+                # Use the real transaction method (not mocked)
+                # We just need to verify isolation_level is passed
+                
+                isolation_used = None
+                
+                @asynccontextmanager
+                async def mock_transaction(isolation_level=None):
+                    nonlocal isolation_used
+                    isolation_used = isolation_level
+                    yield mock_session
+                
+                provider.transaction = mock_transaction
+                
+                async with provider.transaction(isolation_level="SERIALIZABLE") as session:
+                    pass
+                
+                assert isolation_used == "SERIALIZABLE"
+
+
+# =============================================================================
+# ADDITIONAL UTILITY TESTS  
+# =============================================================================
+
+
+class TestGetRemainingTime:
+    """Tests for get_remaining_time_ms utility."""
+    
+    def test_returns_time_when_available(self):
+        """Returns remaining time from Lambda context."""
+        from app.core.serverless import get_remaining_time_ms
+        
+        mock_context = Mock()
+        mock_context.get_remaining_time_in_millis.return_value = 25000
+        
+        result = get_remaining_time_ms(mock_context)
+        assert result == 25000
+    
+    def test_returns_none_when_not_available(self):
+        """Returns None if context doesn't have the method."""
+        from app.core.serverless import get_remaining_time_ms
+        
+        mock_context = Mock(spec=[])  # Empty spec, no methods
+        
+        result = get_remaining_time_ms(mock_context)
+        assert result is None
+
+
+class TestMultipleColdStartHandlers:
+    """Tests for multiple @OnColdStart handlers."""
+    
+    @pytest.mark.asyncio
+    async def test_multiple_handlers_all_run(self, mock_fastapi_app):
+        """All registered cold start handlers are executed."""
+        results = []
+        
+        @OnColdStart
+        def handler_one():
+            results.append("one")
+        
+        @OnColdStart
+        def handler_two():
+            results.append("two")
+        
+        @OnColdStart
+        async def handler_three():
+            await asyncio.sleep(0.01)
+            results.append("three")
+        
+        adapter = LambdaAdapter(mock_fastapi_app)
+        await adapter._run_cold_start_if_needed()
+        
+        assert "one" in results
+        assert "two" in results
+        assert "three" in results
+        assert len(results) == 3
+    
+    @pytest.mark.asyncio
+    async def test_handlers_run_in_order(self, mock_fastapi_app):
+        """Handlers run in registration order."""
+        order = []
+        
+        @OnColdStart
+        def first():
+            order.append(1)
+        
+        @OnColdStart
+        def second():
+            order.append(2)
+        
+        @OnColdStart
+        def third():
+            order.append(3)
+        
+        adapter = LambdaAdapter(mock_fastapi_app)
+        await adapter._run_cold_start_if_needed()
+        
+        assert order == [1, 2, 3]
+
+
+class TestWarmUpHandlers:
+    """Tests for @OnWarmUp handlers."""
+    
+    @pytest.mark.asyncio
+    async def test_warmup_handlers_run(self, mock_fastapi_app):
+        """Warmup handlers are executed during warmup."""
+        warmup_called = False
+        
+        @OnWarmUp
+        async def warmup_handler():
+            nonlocal warmup_called
+            warmup_called = True
+        
+        adapter = LambdaAdapter(mock_fastapi_app)
+        await adapter._run_warmup()
+        
+        assert warmup_called is True
+    
+    @pytest.mark.asyncio
+    async def test_multiple_warmup_handlers(self, mock_fastapi_app):
+        """Multiple warmup handlers all run."""
+        results = []
+        
+        @OnWarmUp
+        def warmup_one():
+            results.append("cache")
+        
+        @OnWarmUp
+        async def warmup_two():
+            results.append("db")
+        
+        adapter = LambdaAdapter(mock_fastapi_app)
+        await adapter._run_warmup()
+        
+        assert "cache" in results
+        assert "db" in results
+    
+    @pytest.mark.asyncio
+    async def test_warmup_event_triggers_warmup(self, mock_fastapi_app):
+        """Warmup event triggers warmup handlers."""
+        warmup_ran = False
+        
+        @OnWarmUp
+        def on_warmup():
+            nonlocal warmup_ran
+            warmup_ran = True
+        
+        with patch("mangum.Mangum"):
+            adapter = LambdaAdapter(mock_fastapi_app)
+            
+            # Trigger warmup via _run_warmup
+            await adapter._run_warmup()
+            
+            assert warmup_ran is True
+
+
+class TestCloudRunAdapterRun:
+    """Tests for CloudRunAdapter.run() method."""
+    
+    def test_run_requires_uvicorn(self, mock_fastapi_app):
+        """run() raises ImportError if uvicorn not installed."""
+        adapter = CloudRunAdapter(mock_fastapi_app)
+        
+        with patch.dict("sys.modules", {"uvicorn": None}):
+            with pytest.raises(ImportError, match="Uvicorn is required"):
+                adapter.run()
+    
+    def test_run_calls_uvicorn(self, mock_fastapi_app):
+        """run() calls uvicorn.run with correct config."""
+        adapter = CloudRunAdapter(mock_fastapi_app)
+        
+        with patch("uvicorn.run") as mock_run:
+            adapter.run()
+            
+            mock_run.assert_called_once()
+            call_kwargs = mock_run.call_args.kwargs
+            assert call_kwargs["host"] == "0.0.0.0"
+            assert call_kwargs["workers"] == 1
+

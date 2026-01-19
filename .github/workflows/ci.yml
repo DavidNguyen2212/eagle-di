@@ -1,0 +1,143 @@
+# Eagle DI - CI/CD Pipeline
+# Runs tests on every push and PR, publishes to PyPI on release
+# Uses UV for fast dependency management
+
+name: CI/CD
+
+on:
+  push:
+    branches: [main, v5.x.x]
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+
+env:
+  UV_SYSTEM_PYTHON: 1
+
+jobs:
+  # ============================================
+  # TEST JOB - Run on every push/PR
+  # ============================================
+  test:
+    name: Test Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+      
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras --dev
+      
+      - name: Run tests with coverage
+        run: |
+          uv run pytest tests/ -v --cov=app/core --cov-report=xml --cov-report=term-missing
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-${{ matrix.python-version }}
+        continue-on-error: true
+
+  # ============================================
+  # LINT JOB - Code quality checks
+  # ============================================
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      
+      - name: Set up Python
+        run: uv python install 3.11
+      
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+      
+      - name: Run Ruff (linter + formatter)
+        run: |
+          uv run ruff check app/ tests/ --output-format=github
+          uv run ruff format --check app/ tests/
+        continue-on-error: true
+      
+      - name: Run MyPy (type checking)
+        run: |
+          uv run mypy app/core/eagle_di.py app/core/serverless.py --ignore-missing-imports
+        continue-on-error: true
+
+  # ============================================
+  # BUILD JOB - Build package
+  # ============================================
+  build:
+    name: Build Package
+    runs-on: ubuntu-latest
+    needs: [test]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      
+      - name: Set up Python
+        run: uv python install 3.11
+      
+      - name: Build package
+        run: uv build
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  # ============================================
+  # PUBLISH JOB - Publish to PyPI on release
+  # ============================================
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.event_name == 'release'
+    
+    permissions:
+      id-token: write  # Required for trusted publishing
+    
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
