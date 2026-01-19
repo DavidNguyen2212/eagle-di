@@ -1,0 +1,119 @@
+# Eagle DI FastAPI on AWS Lambda
+# Deploy with: serverless deploy --stage dev
+
+service: eagle-di-api
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.11
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'us-east-1'}
+  memorySize: 256
+  timeout: 30
+  
+  # Environment variables
+  environment:
+    STAGE: ${self:provider.stage}
+    DATABASE_URL: ${env:DATABASE_URL, ''}
+    PYTHONUNBUFFERED: "1"
+  
+  # IAM permissions (customize as needed)
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: "*"
+        # Add more permissions as needed
+        # - Effect: Allow
+        #   Action:
+        #     - dynamodb:*
+        #   Resource: 
+        #     - arn:aws:dynamodb:${self:provider.region}:*:table/${self:service}-*
+
+  # API Gateway settings
+  httpApi:
+    cors: true
+    # Custom domain (uncomment and configure)
+    # domain:
+    #   name: api.example.com
+    #   certificateArn: arn:aws:acm:...
+
+functions:
+  api:
+    handler: app.main.handler
+    description: Eagle DI FastAPI Application
+    events:
+      - httpApi:
+          path: /{proxy+}
+          method: ANY
+      - httpApi:
+          path: /
+          method: ANY
+    
+    # Warmup plugin configuration
+    warmup:
+      default:
+        enabled: false
+        events:
+          - schedule: rate(5 minutes)
+    
+    # VPC configuration (uncomment if needed)
+    # vpc:
+    #   securityGroupIds:
+    #     - sg-xxxxxxxx
+    #   subnetIds:
+    #     - subnet-xxxxxxxx
+    #     - subnet-yyyyyyyy
+
+# Plugins
+plugins:
+  - serverless-python-requirements
+  # - serverless-plugin-warmup  # Uncomment for warmup support
+
+# Custom configuration
+custom:
+  pythonRequirements:
+    dockerizePip: non-linux
+    slim: true
+    strip: false
+    # Include specific packages only
+    # noDeploy:
+    #   - pytest
+    #   - boto3  # Already in Lambda runtime
+
+package:
+  individually: true
+  exclude:
+    - node_modules/**
+    - .git/**
+    - .venv/**
+    - tests/**
+    - "*.md"
+    - .env*
+    - __pycache__/**
+    - "**/__pycache__/**"
+  include:
+    - app/**
+    - requirements.txt
+
+# Resources (optional)
+# resources:
+#   Resources:
+#     # DynamoDB table example
+#     UsersTable:
+#       Type: AWS::DynamoDB::Table
+#       Properties:
+#         TableName: ${self:service}-users-${self:provider.stage}
+#         BillingMode: PAY_PER_REQUEST
+#         AttributeDefinitions:
+#           - AttributeName: id
+#             AttributeType: S
+#         KeySchema:
+#           - AttributeName: id
+#             KeyType: HASH

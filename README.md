@@ -9,14 +9,96 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.9+-3776ab.svg?logo=python&logoColor=white" alt="Python 3.9+">
   <img src="https://img.shields.io/badge/FastAPI-0.95+-009688.svg?logo=fastapi&logoColor=white" alt="FastAPI 0.95+">
-  <img src="https://img.shields.io/badge/Tests-228%20passing-green.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-256%20passing-green.svg" alt="Tests">
+</p>
+
+<p align="center">
+  <a href="#-quick-start"><img src="https://img.shields.io/badge/💉_Modern_DI-Zero_Dependencies-4ecdc4?style=for-the-badge" alt="Modern DI"></a>
+  <a href="docs/TRANSACTION.md"><img src="https://img.shields.io/badge/🔄_Transactional-Spring_Style-ff6b6b?style=for-the-badge" alt="Transactional"></a>
+  <a href="docs/SERVERLESS.md"><img src="https://img.shields.io/badge/⚡_Serverless-Lambda_|_Azure_|_GCP-ff9f43?style=for-the-badge" alt="Serverless"></a>
 </p>
 
 Type hint-based DI for FastAPI. Auto-inject services without explicit `Depends()`.
 
 **A pure Python, zero-dependency DI mini utility built specifically for FastAPI applications.**
 
-> 📦 **Looking for more utilities?** Check out the [docs/](docs/) folder for additional features like Spring-style [`@Transactional`](docs/TRANSACTION.md) decorator with propagation modes, isolation levels, and rollback rules.
+> 📦 **Looking for more utilities?** Check out the [docs/](docs/) folder for additional features like Spring-style [`@Transactional`](docs/TRANSACTION.md) decorator and [`Serverless`](docs/SERVERLESS.md) adapters.
+
+---
+
+## 📥 Installation
+
+### Option A: Copy-Paste Ready (Original Philosophy)
+
+Just copy the file(s) you need - **zero pip install required**:
+
+```bash
+# Core DI only (~1500 lines)
+cp eagle_di.py your_project/core/
+
+# + Transaction support (~500 lines)
+cp transaction.py your_project/core/
+
+# + Serverless adapters (~800 lines)
+cp serverless.py your_project/core/
+```
+
+### Option B: Install from PyPI
+
+```bash
+pip install eagle-di              # Core only
+pip install eagle-di[transaction] # + @Transactional
+pip install eagle-di[aws]         # + Lambda support
+pip install eagle-di[serverless]  # + All serverless
+```
+
+---
+
+## 🚀 v5.0.0 - Serverless Support
+
+> **NEW in v5.0.0** - Deploy Eagle DI to AWS Lambda, Azure Functions, and Google Cloud Run!
+
+### What's New
+
+Multi-cloud serverless adapters with cold start optimization and lifecycle hooks:
+
+```python
+from fastapi import FastAPI
+from app.core.serverless import LambdaAdapter, OnColdStart, Timeout
+
+app = FastAPI()
+
+@OnColdStart
+async def init_db():
+    """Runs once on cold start"""
+    await database.connect()
+
+@app.get("/users/{id}")
+@Timeout(25)  # Graceful timeout (leave 5s buffer for Lambda's 30s limit)
+async def get_user(id: int, service: UserService):
+    return await service.get_user(id)
+
+# AWS Lambda handler
+adapter = LambdaAdapter(app)
+handler = adapter.handler
+```
+
+### Supported Platforms
+
+| Platform | Adapter | Template |
+|----------|---------|----------|
+| AWS Lambda | `LambdaAdapter` | `templates/serverless/aws/` |
+| Azure Functions | `AzureFunctionsAdapter` | `templates/serverless/azure/` |
+| Google Cloud Run | `CloudRunAdapter` | `templates/serverless/gcp/` |
+
+### Key Features
+
+- 🔥 **`@OnColdStart`** - Initialize connections/resources on cold start
+- ⚡ **`@OnWarmUp`** - Provisioned concurrency warmup handler
+- ⏱️ **`@Timeout(seconds)`** - Graceful timeout with buffer
+- 🔌 **`ServerlessDatabaseProvider`** - Small pool size, aggressive recycling
+
+> 📖 See [docs/SERVERLESS.md](docs/SERVERLESS.md) for full documentation.
 
 ---
 
