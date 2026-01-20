@@ -1,7 +1,7 @@
 # Eagle DI - Lightweight Dependency Injection for FastAPI
 
 <p align="center">
-  <img src="docs/di_logo.png" alt="DI Framework Logo" width="400">
+  <img src="https://raw.githubusercontent.com/DavidNguyen2212/eagle-di/main/docs/di_logo.png" alt="DI Framework Logo" width="400">
 </p>
 
 <h2 align="center"><em>EAGLE DI</em></h2>

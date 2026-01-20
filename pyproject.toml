@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eagle-di"
-version = "5.0.0"
+version = "5.0.1"
 description = "Lightweight Dependency Injection for FastAPI - Type hint-based, zero dependencies"
 readme = "README.md"
 license = {text = "MIT"}
@@ -68,7 +68,7 @@ Issues = "https://github.com/DavidNguyen2212/eagle-di/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["app*"]
+include = ["eagle_di*", "app*"]
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]

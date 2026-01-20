@@ -2,6 +2,27 @@
 
 Deploy Eagle DI FastAPI applications to AWS Lambda, Azure Functions, and Google Cloud Run.
 
+## Installation
+
+Install with the extras you need:
+
+```bash
+# AWS Lambda only
+pip install eagle-di[aws]
+
+# Azure Functions only  
+pip install eagle-di[azure]
+
+# All serverless + database support
+pip install eagle-di[serverless]
+```
+
+| Extra | Includes | Features |
+|-------|----------|----------|
+| `[aws]` | mangum | `LambdaAdapter` |
+| `[azure]` | azure-functions | `AzureFunctionsAdapter` |
+| `[serverless]` | mangum + sqlalchemy | All adapters + `ServerlessDatabaseProvider` |
+
 ## Table of Contents
 
 - [Quick Start](#quick-start)
@@ -18,7 +39,7 @@ Deploy Eagle DI FastAPI applications to AWS Lambda, Azure Functions, and Google 
 
 ```python
 from fastapi import FastAPI
-from app.core.serverless import LambdaAdapter, OnColdStart
+from eagle_di import LambdaAdapter, OnColdStart
 
 app = FastAPI()
 
@@ -34,19 +55,12 @@ handler = adapter.handler  # Export this for Lambda
 
 ## AWS Lambda
 
-### Installation
-
-```bash
-pip install mangum
-```
-
 ### Basic Setup
 
 ```python
 # app/main.py
 from fastapi import FastAPI
-from app.core.serverless import LambdaAdapter, OnColdStart
-from app.core.eagle_di import Injectable, InjectableRouter
+from eagle_di import Injectable, InjectableRouter, LambdaAdapter, OnColdStart
 
 app = FastAPI()
 
